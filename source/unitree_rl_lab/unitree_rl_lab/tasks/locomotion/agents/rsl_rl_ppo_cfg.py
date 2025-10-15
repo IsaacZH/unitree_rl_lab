@@ -10,7 +10,8 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 @configclass
 class BasePPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 50000
+    max_iterations = 8000
+    num_envs = 4096
     save_interval = 100
     experiment_name = ""  # same as task name
     empirical_normalization = False
