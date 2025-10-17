@@ -229,16 +229,16 @@ class EventCfg:
 class CommandsCfg:
     """Command specifications for the MDP."""
 
-    base_velocity = mdp.UniformLevelVelocityCommandCfg(
+    base_velocity = mdp.UniformThresholdVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.02,
+        rel_heading_envs=1.0,
+        heading_command=True,
+        heading_control_stiffness=0.5,
         debug_vis=True,
-        ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.1, 0.1), lin_vel_y=(-0.1, 0.1), ang_vel_z=(-1, 1)
-        ),
-        limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-1.0, 1.0), lin_vel_y=(-1, 1), ang_vel_z=(-1.0, 1.0)
+        ranges=mdp.UniformThresholdVelocityCommandCfg.Ranges(
+            lin_vel_x=(-1.0, 1.0), lin_vel_y=(-1.0, 1.0), ang_vel_z=(-1.0, 1.0), heading=(-math.pi, math.pi)
         ),
     )
 
@@ -554,25 +554,34 @@ class RewardsCfg:
 class TerminationsCfg:
     """Termination terms for the MDP."""
 
+    # MDP terminations
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    # command_resample
     terrain_out_of_bounds = DoneTerm(
         func=mdp.terrain_out_of_bounds,
         params={"asset_cfg": SceneEntityCfg("robot"), "distance_buffer": 3.0},
         time_out=True,
     )
-    base_contact = DoneTerm(
-        func=mdp.illegal_contact,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="base"), "threshold": 1.0},
-    )
-    # bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": 0.8})
 
+    # # Contact sensor
+    # illegal_contact = DoneTerm(
+    #     func=mdp.illegal_contact,
+    #     params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=["base",".*_hip"]), "threshold": 1.0},
+    # )
 
 @configclass
 class CurriculumCfg:
     """Curriculum terms for the MDP."""
 
     terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
-    # lin_vel_cmd_levels = CurrTerm(mdp.lin_vel_cmd_levels)
+
+    # command_levels = CurrTerm(
+    #     func=mdp.command_levels_vel,
+    #     params={
+    #         "reward_term_name": "track_lin_vel_xy_exp",
+    #         "range_multiplier": (0.1, 1.0),
+    #     },
+    # )
 
 
 @configclass
@@ -621,7 +630,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
 class RobotPlayEnvCfg(RobotEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.scene.num_envs = 32
-        self.scene.terrain.terrain_generator.num_rows = 4
-        self.scene.terrain.terrain_generator.num_cols = 4
+        self.scene.num_envs = 64
+        self.scene.terrain.terrain_generator.num_rows = 10
+        self.scene.terrain.terrain_generator.num_cols = 20
         self.commands.base_velocity.ranges = self.commands.base_velocity.limit_ranges

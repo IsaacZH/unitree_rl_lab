@@ -47,7 +47,7 @@ COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
         ),
         "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
             proportion=0.2,
-            step_height_range=(0.05, 0.23),
+            step_height_range=(0.05, 0.5),
             step_width=0.3,
             platform_width=3.0,
             border_width=1.0,
@@ -55,7 +55,7 @@ COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
         ),
         "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
             proportion=0.2,
-            step_height_range=(0.05, 0.23),
+            step_height_range=(0.05, 0.5),
             step_width=0.3,
             platform_width=3.0,
             border_width=1.0,
@@ -122,8 +122,8 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.3, 1.2),
-            "dynamic_friction_range": (0.3, 1.2),
+            "static_friction_range": (0.3, 1.6),
+            "dynamic_friction_range": (0.3, 1.6),
             "restitution_range": (0.0, 0.15),
             "num_buckets": 64,
         },
@@ -197,7 +197,7 @@ class CommandsCfg:
             lin_vel_x=(-0.1, 0.1), lin_vel_y=(-0.1, 0.1), ang_vel_z=(-1, 1)
         ),
         limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-1.0, 1.0), lin_vel_y=(-0.4, 0.4), ang_vel_z=(-1.0, 1.0)
+            lin_vel_x=(-1.5, 1.5), lin_vel_y=(-1.0, 1), ang_vel_z=(-1.5, 1.5)
         ),
     )
 
@@ -288,7 +288,7 @@ class RewardsCfg:
     energy = RewTerm(func=mdp.energy, weight=-2e-5)
 
     # -- robot
-    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-2.5)
+    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-1.0)
 
     joint_pos = RewTerm(
         func=mdp.joint_position_penalty,
