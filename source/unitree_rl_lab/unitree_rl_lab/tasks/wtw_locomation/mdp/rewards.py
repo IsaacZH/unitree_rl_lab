@@ -34,6 +34,44 @@ def stand_still(
     cmd_norm = torch.norm(env.command_manager.get_command(command_name), dim=1)
     return reward * (cmd_norm < 0.1)
 
+def action_smoothness(
+    env: ManagerBasedRLEnv,
+    action_name: str = "JointPositionAction",
+) -> torch.Tensor:
+    """Penalize first-order joint position target changes.
+
+    Returns sum over joint dimensions of (target_t - target_{t-1})^2.
+
+    This computes smoothness on the actual joint position targets sent to the robot.
+    For JointPositionAction: target = offset + scale * action
+    
+    This version directly computes prev_processed_actions from env.action_manager.prev_action
+    without needing to cache, which is more elegant and avoids state management.
+    
+    Args:
+        env: The environment.
+        action_name: The name of the action term to use (default: "JointPositionAction").
+    """
+    # Get the action term using public API
+    action_term = env.action_manager.get_term(action_name)
+    
+    # Current joint position target = processed_action
+    # For JointPositionAction: processed_action = offset + scale * raw_action
+    cur_target = action_term.processed_actions
+    
+    # Compute previous joint position target from prev_action
+    # Access protected attributes (they exist at runtime, type checker just doesn't see them)
+    prev_raw_action = env.action_manager.prev_action
+    scale = getattr(action_term, "_scale", 1.0)  # type: ignore
+    offset = getattr(action_term, "_offset", 0.0)  # type: ignore
+    prev_target = offset + scale * prev_raw_action
+    diff = torch.square(cur_target - prev_target)
+    # ignore first step where prev is zeroW
+    diff = diff * (prev_raw_action != 0.0)
+    # Compute smoothness penalty
+    reward = torch.sum(diff, dim=1)
+    
+    return reward
 
 """
 Robot.
