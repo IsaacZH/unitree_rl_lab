@@ -197,7 +197,7 @@ class CommandsCfg:
             lin_vel_x=(-0.1, 0.1), lin_vel_y=(-0.1, 0.1), ang_vel_z=(-1, 1)
         ),
         limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-1.0, 1.0), lin_vel_y=(-0.4, 0.4), ang_vel_z=(-1.0, 1.0)
+            lin_vel_x=(-1.5, 1.5), lin_vel_y=(-0.8, 0.8), ang_vel_z=(-1.0, 1.0)
         ),
     )
 
@@ -299,6 +299,11 @@ class RewardsCfg:
             "velocity_threshold": 0.3,
         },
     )
+    
+    base_height_l2 = RewTerm(
+        func=mdp.base_height_l2, weight=-2.0, params={"target_height": 0.38}
+    )
+
 
     # -- feet
     feet_air_time = RewTerm(
@@ -317,7 +322,7 @@ class RewardsCfg:
     )
     feet_slide = RewTerm(
         func=mdp.feet_slide,
-        weight=-0.1,
+        weight=-0.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
@@ -326,7 +331,7 @@ class RewardsCfg:
     
     feet_height_body = RewTerm(
         func=mdp.feet_height_body,
-        weight=0.2,
+        weight=1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "command_name": "base_velocity",
@@ -338,7 +343,7 @@ class RewardsCfg:
         func=mdp.feet_gait,
         weight=0.2,
         params={
-            "period": 0.8,  # 步态周期
+            "period": 0.7,  # 步态周期
             "offset": [0.0, 0.5, 0.5, 0.0],  # 四条腿的相位偏移（LF, RF, LH, RH）
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
             "threshold": 0.5,  # 支撑相比例
