@@ -300,9 +300,9 @@ class RewardsCfg:
         },
     )
     
-    base_height_l2 = RewTerm(
-        func=mdp.base_height_l2, weight=-2.0, params={"target_height": 0.38}
-    )
+    # base_height_l2 = RewTerm(
+    #     func=mdp.base_height_l2, weight=-2.0, params={"target_height": 0.4}
+    # )
 
 
     # -- feet
@@ -322,7 +322,7 @@ class RewardsCfg:
     )
     feet_slide = RewTerm(
         func=mdp.feet_slide,
-        weight=-0.5,
+        weight=-0.8,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
@@ -331,7 +331,7 @@ class RewardsCfg:
     
     feet_height_body = RewTerm(
         func=mdp.feet_height_body,
-        weight=1.0,
+        weight=1.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "command_name": "base_velocity",
@@ -339,9 +339,21 @@ class RewardsCfg:
             "tanh_mult": 2.0,    
         }
     )
+    
+    # foot_clearance_reward = RewTerm(
+    #     func=mdp.foot_clearance_reward,
+    #     weight=0.5,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+    #         "target_height": 0.10,
+    #         "std": math.sqrt(0.5),
+    #         "tanh_mult": 2.0,
+    #     }
+    # )
+    
     feet_gait = RewTerm(
         func=mdp.feet_gait,
-        weight=0.2,
+        weight=0.8,
         params={
             "period": 0.7,  # 步态周期
             "offset": [0.0, 0.5, 0.5, 0.0],  # 四条腿的相位偏移（LF, RF, LH, RH）
@@ -351,18 +363,35 @@ class RewardsCfg:
         },
     )
 
+    # feet_gait = RewTerm(
+    #     func=mdp.GaitReward,
+    #     weight=5,
+    #     params={
+    #         "std": math.sqrt(0.5),
+    #         "command_name": "base_velocity",
+    #         "max_err": 0.2,
+    #         "velocity_threshold": 0.5,
+    #         "command_threshold": 0.1,
+    #         "synced_feet_pair_names": (
+    #             ("FL_foot", "RR_foot"),
+    #             ("FR_foot", "RL_foot")
+    #         ),
+    #         "asset_cfg": SceneEntityCfg("robot"),
+    #         "sensor_cfg": SceneEntityCfg("contact_forces")
+    #     }
+    # )
 
-    joint_mirror = RewTerm(
-        func=mdp.joint_mirror,
-        weight=-0.05,
-        params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "mirror_joints": [
-                ["FR_(thigh|calf).*", "RL_(thigh|calf).*"],
-                ["FL_(thigh|calf).*", "RR_(thigh|calf).*"]
-            ]
-        }
-    )
+    # joint_mirror = RewTerm(
+    #     func=mdp.joint_mirror,
+    #     weight=-0.05,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot"),
+    #         "mirror_joints": [
+    #             ["FR_(thigh|calf).*", "RL_(thigh|calf).*"],
+    #             ["FL_(thigh|calf).*", "RR_(thigh|calf).*"]
+    #         ]
+    #     }
+    # )
 
     # -- other
     undesired_contacts = RewTerm(
