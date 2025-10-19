@@ -353,10 +353,9 @@ class RewardsCfg:
     
     feet_gait = RewTerm(
         func=mdp.raibert_heuristic,
-        weight=0.2,
+        weight=1.0,
         params={
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-            "threshold": 0.5,  # 支撑相比例
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "command_name": "base_velocity",
         },
     )

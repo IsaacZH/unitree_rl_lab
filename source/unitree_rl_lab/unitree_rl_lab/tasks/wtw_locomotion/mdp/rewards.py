@@ -270,31 +270,45 @@ def raibert_heuristic(
     cmd_frequencies = 3.0
     
     if not hasattr(env, "gait_indices") or env.gait_indices is None:
-        #  0 初始化每个 env 的 gait phases
-        n_legs = len(asset_cfg.body_ids)
-        env.gait_indices = torch.zeros(env.num_envs, n_legs, device=env.device)
+        #  Initialize gait phases for each env
+        env.gait_indices = torch.zeros(env.num_envs, device=env.device)
 
-    env.gait_indices = torch.remainder(env.gait_indices + env.sim.dt * cmd_frequencies, 1.0)
+    env.gait_indices = torch.remainder(env.gait_indices + env.cfg.sim.dt * cmd_frequencies, 1.0)
 
-    # gait = torch.tensor([0.5, 0, 0])
-    cmd_phases = 0.5 
-    cmd_offsets = 0 
-    cmd_bounds = 0
-    temp_foot_indices = [env.gait_indices + cmd_phases + cmd_offsets + cmd_bounds, #+0.5
-                        env.gait_indices + cmd_offsets, #0
-                        env.gait_indices + cmd_bounds,  #0
-                        env.gait_indices + cmd_phases]  #+0.5
-
-    foot_indices = torch.remainder(torch.cat([temp_foot_indices[i].unsqueeze(1) for i in range(4)], dim=1), 1.0)
+    # Create phase offsets for each leg
+    cmd_phases = 0.5
+    cmd_offsets = 0.0
+    cmd_bounds = 0.0
     
-    phases = torch.abs(1.0 - (foot_indices * 2.0)) * 1.0 - 0.5
+    # Create base phases with batch dimension
+    base_phase = env.gait_indices.unsqueeze(-1)  # [batch_size, 1]
     
-    x_vel_des = env.command_manager.get_command(command_name)[:, 0:1]
-    yaw_vel_des = env.command_manager.get_command(command_name)[:, 2:3]
+    # Define offsets for each leg [FR, FL, RR, RL]
+    leg_offsets = torch.tensor([
+        cmd_phases + cmd_offsets + cmd_bounds,  # FR: +0.5
+        cmd_offsets,                           # FL: 0
+        cmd_bounds,                            # RR: 0
+        cmd_phases                             # RL: +0.5
+    ], device=env.device)
+    
+    # Broadcast base_phase to all legs and add offsets
+    foot_indices = torch.remainder(base_phase + leg_offsets.unsqueeze(0), 1.0)  # [batch_size, 4]
+    
+    # Calculate phases for all legs
+    phases = (torch.abs(1.0 - (foot_indices * 2.0)) * 1.0 - 0.5).unsqueeze(-1)  # [batch_size, 4, 1]
+    
+    x_vel_des = env.command_manager.get_command(command_name)[:, 0:1]  # [batch_size, 1]
+    yaw_vel_des = env.command_manager.get_command(command_name)[:, 2:3]  # [batch_size, 1]
     y_vel_des = yaw_vel_des * desired_stance_length / 2
-    desired_ys_offset = phases * y_vel_des * (0.5 / cmd_frequencies)
+    
+    # Reshape velocities for broadcasting
+    x_vel_des = x_vel_des.unsqueeze(1)  # [batch_size, 1, 1]
+    y_vel_des = y_vel_des.unsqueeze(1)  # [batch_size, 1, 1]
+    
+    # Calculate offsets (phases is already [batch_size, 4, 1])
+    desired_ys_offset = (phases * y_vel_des * (0.5 / cmd_frequencies)).squeeze(-1)  # [batch_size, 4]
     desired_ys_offset[:, 2:4] *= -1
-    desired_xs_offset = phases * x_vel_des * (0.5 / cmd_frequencies)
+    desired_xs_offset = (phases * x_vel_des * (0.5 / cmd_frequencies)).squeeze(-1)  # [batch_size, 4]
 
     desired_ys_nom = desired_ys_nom + desired_ys_offset
     desired_xs_nom = desired_xs_nom + desired_xs_offset
