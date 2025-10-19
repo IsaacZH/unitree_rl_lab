@@ -47,7 +47,7 @@ COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
         ),
         "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
             proportion=0.2,
-            step_height_range=(0.05, 0.5),
+            step_height_range=(0.05, 0.23),
             step_width=0.3,
             platform_width=3.0,
             border_width=1.0,
@@ -55,7 +55,7 @@ COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
         ),
         "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
             proportion=0.2,
-            step_height_range=(0.05, 0.5),
+            step_height_range=(0.05, 0.23),
             step_width=0.3,
             platform_width=3.0,
             border_width=1.0,
@@ -72,8 +72,8 @@ class RobotSceneCfg(InteractiveSceneCfg):
     # ground terrain
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
-        terrain_type="generator",  # "plane", "generator"
-        terrain_generator=COBBLESTONE_ROAD_CFG,  # None, ROUGH_TERRAINS_CFG
+        terrain_type="plane",  # "plane", "generator"
+        terrain_generator=None,  # None, ROUGH_TERRAINS_CFG
         max_init_terrain_level=1,
         collision_group=-1,
         physics_material=sim_utils.RigidBodyMaterialCfg(
@@ -122,8 +122,8 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.3, 1.6),
-            "dynamic_friction_range": (0.3, 1.6),
+            "static_friction_range": (0.3, 2.0),
+            "dynamic_friction_range": (0.3, 2.0),
             "restitution_range": (0.0, 0.15),
             "num_buckets": 64,
         },
@@ -197,7 +197,7 @@ class CommandsCfg:
             lin_vel_x=(-0.1, 0.1), lin_vel_y=(-0.1, 0.1), ang_vel_z=(-1, 1)
         ),
         limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-1.5, 1.5), lin_vel_y=(-1.0, 1), ang_vel_z=(-1.5, 1.5)
+            lin_vel_x=(-1.5, 1.5), lin_vel_y=(-0.8, 0.8), ang_vel_z=(-1.0, 1.0)
         ),
     )
 
@@ -288,7 +288,7 @@ class RewardsCfg:
     energy = RewTerm(func=mdp.energy, weight=-2e-5)
 
     # -- robot
-    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-1.0)
+    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-2.5)
 
     joint_pos = RewTerm(
         func=mdp.joint_position_penalty,
@@ -299,6 +299,11 @@ class RewardsCfg:
             "velocity_threshold": 0.3,
         },
     )
+    
+    base_height_l2 = RewTerm(
+        func=mdp.base_height_l2, weight=-2.0, params={"target_height": 0.38}
+    )
+
 
     # -- feet
     feet_air_time = RewTerm(
@@ -317,20 +322,57 @@ class RewardsCfg:
     )
     feet_slide = RewTerm(
         func=mdp.feet_slide,
-        weight=-0.1,
+        weight=-0.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
         },
     )
-    # feet_contact_forces = RewTerm(
-    #     func=mdp.contact_forces,
-    #     weight=-0.02,
+    
+    feet_height_body = RewTerm(
+        func=mdp.feet_height_body,
+        weight=1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+            "command_name": "base_velocity",
+            "target_height": -0.2,  
+            "tanh_mult": 2.0,    
+        }
+    )
+    # feet_gait = RewTerm(
+    #     func=mdp.feet_gait,
+    #     weight=0.2,
     #     params={
-    #         "threshold": 100.0,
+    #         "period": 0.7,  # 步态周期
+    #         "offset": [0.0, 0.5, 0.5, 0.0],  # 四条腿的相位偏移（LF, RF, LH, RH）
     #         "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+    #         "threshold": 0.5,  # 支撑相比例
+    #         "command_name": "base_velocity",
     #     },
     # )
+    
+    feet_gait = RewTerm(
+        func=mdp.raibert_heuristic,
+        weight=0.2,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+            "threshold": 0.5,  # 支撑相比例
+            "command_name": "base_velocity",
+        },
+    )
+
+
+    joint_mirror = RewTerm(
+        func=mdp.joint_mirror,
+        weight=-0.05,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "mirror_joints": [
+                ["FR_(thigh|calf).*", "RL_(thigh|calf).*"],
+                ["FL_(thigh|calf).*", "RR_(thigh|calf).*"]
+            ]
+        }
+    )
 
     # -- other
     undesired_contacts = RewTerm(
@@ -359,7 +401,7 @@ class TerminationsCfg:
 class CurriculumCfg:
     """Curriculum terms for the MDP."""
 
-    terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
+    # terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
     lin_vel_cmd_levels = CurrTerm(mdp.lin_vel_cmd_levels)
 
 
@@ -410,6 +452,6 @@ class RobotPlayEnvCfg(RobotEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         self.scene.num_envs = 32
-        self.scene.terrain.terrain_generator.num_rows = 4
-        self.scene.terrain.terrain_generator.num_cols = 4
+        # self.scene.terrain.terrain_generator.num_rows = 2
+        # self.scene.terrain.terrain_generator.num_cols = 1
         self.commands.base_velocity.ranges = self.commands.base_velocity.limit_ranges

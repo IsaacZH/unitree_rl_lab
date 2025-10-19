@@ -239,6 +239,74 @@ def feet_gait(
     return reward
 
 
+def raibert_heuristic(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    command_name: str = "base_velocity",
+) -> torch.Tensor:
+    
+    asset: RigidObject = env.scene[asset_cfg.name]
+
+    cur_footpos_translated = asset.data.body_pos_w[:, asset_cfg.body_ids, :] - asset.data.root_pos_w[:, :].unsqueeze(1)
+    footpos_in_body_frame = torch.zeros(env.num_envs, len(asset_cfg.body_ids), 3, device=env.device)
+    
+    for i in range(len(asset_cfg.body_ids)):
+        footpos_in_body_frame[:, i, :] = math_utils.quat_apply_yaw(
+            asset.data.root_quat_w, cur_footpos_translated[:, i, :]
+        )
+        
+    # nominal positions: [FR, FL, RR, RL]
+    desired_stance_width = 0.3
+    desired_ys_nom = torch.tensor([desired_stance_width / 2,  -desired_stance_width / 2, 
+                                   desired_stance_width / 2, -desired_stance_width / 2], 
+                                  device=env.device).unsqueeze(0)
+
+    desired_stance_length = 0.45
+    desired_xs_nom = torch.tensor([desired_stance_length / 2,  desired_stance_length / 2, 
+                                   -desired_stance_length / 2, -desired_stance_length / 2], 
+                                  device=env.device).unsqueeze(0)
+
+    # raibert offsets
+    cmd_frequencies = 3.0
+    
+    if not hasattr(env, "gait_indices") or env.gait_indices is None:
+        #  0 初始化每个 env 的 gait phases
+        n_legs = len(asset_cfg.body_ids)
+        env.gait_indices = torch.zeros(env.num_envs, n_legs, device=env.device)
+
+    env.gait_indices = torch.remainder(env.gait_indices + env.sim.dt * cmd_frequencies, 1.0)
+
+    # gait = torch.tensor([0.5, 0, 0])
+    cmd_phases = 0.5 
+    cmd_offsets = 0 
+    cmd_bounds = 0
+    temp_foot_indices = [env.gait_indices + cmd_phases + cmd_offsets + cmd_bounds, #+0.5
+                        env.gait_indices + cmd_offsets, #0
+                        env.gait_indices + cmd_bounds,  #0
+                        env.gait_indices + cmd_phases]  #+0.5
+
+    foot_indices = torch.remainder(torch.cat([temp_foot_indices[i].unsqueeze(1) for i in range(4)], dim=1), 1.0)
+    
+    phases = torch.abs(1.0 - (foot_indices * 2.0)) * 1.0 - 0.5
+    
+    x_vel_des = env.command_manager.get_command(command_name)[:, 0:1]
+    yaw_vel_des = env.command_manager.get_command(command_name)[:, 2:3]
+    y_vel_des = yaw_vel_des * desired_stance_length / 2
+    desired_ys_offset = phases * y_vel_des * (0.5 / cmd_frequencies)
+    desired_ys_offset[:, 2:4] *= -1
+    desired_xs_offset = phases * x_vel_des * (0.5 / cmd_frequencies)
+
+    desired_ys_nom = desired_ys_nom + desired_ys_offset
+    desired_xs_nom = desired_xs_nom + desired_xs_offset
+
+    desired_footsteps_body_frame = torch.cat((desired_xs_nom.unsqueeze(2), desired_ys_nom.unsqueeze(2)), dim=2)
+
+    err_raibert_heuristic = torch.abs(desired_footsteps_body_frame - footpos_in_body_frame[:, :, 0:2])
+
+    reward = torch.sum(torch.square(err_raibert_heuristic), dim=(1, 2))
+
+    return reward
+
 """
 Other rewards.
 """

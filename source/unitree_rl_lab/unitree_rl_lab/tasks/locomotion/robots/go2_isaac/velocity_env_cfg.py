@@ -72,9 +72,9 @@ class RobotSceneCfg(InteractiveSceneCfg):
     # ground terrain
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
-        terrain_type="plane",  # "plane", "generator"
-        terrain_generator=None,  # None, ROUGH_TERRAINS_CFG
-        max_init_terrain_level=1,
+        terrain_type="generator",  # "plane", "generator"
+        terrain_generator=COBBLESTONE_ROAD_CFG,  # None, ROUGH_TERRAINS_CFG
+        max_init_terrain_level=10,
         collision_group=-1,
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
@@ -318,7 +318,7 @@ class RewardsCfg:
     
     feet_stumble = RewTerm(
         func=mdp.feet_stumble,
-        weight=-2.0,
+        weight=-5.0,
         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot")},
     )
     
@@ -342,14 +342,14 @@ class RewardsCfg:
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "command_name": "base_velocity",
-            "target_height": -0.2,  
+            "target_height": -0.25,  
             "tanh_mult": 2.0,    
         }
     )
     
     feet_gait = RewTerm(
         func=mdp.feet_gait,
-        weight=0.2,
+        weight=1.0,
         params={
             "period": 0.7,  # 步态周期
             "offset": [0.0, 0.5, 0.5, 0.0],  # 四条腿的相位偏移（LF, RF, LH, RH）
@@ -399,7 +399,7 @@ class TerminationsCfg:
 class CurriculumCfg:
     """Curriculum terms for the MDP."""
 
-    # terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
+    terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
     lin_vel_cmd_levels = CurrTerm(mdp.lin_vel_cmd_levels)
 
 
@@ -449,7 +449,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
 class RobotPlayEnvCfg(RobotEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.scene.num_envs = 32
-        # self.scene.terrain.terrain_generator.num_rows = 2
-        # self.scene.terrain.terrain_generator.num_cols = 1
+        self.scene.num_envs = 512
+        self.scene.terrain.terrain_generator.num_rows = 5
+        self.scene.terrain.terrain_generator.num_cols = 5
         self.commands.base_velocity.ranges = self.commands.base_velocity.limit_ranges
