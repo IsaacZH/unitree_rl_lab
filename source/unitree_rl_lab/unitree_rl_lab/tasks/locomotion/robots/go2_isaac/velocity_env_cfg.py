@@ -33,34 +33,34 @@ COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
     use_cache=False,
     sub_terrains={
         "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.1),
-        # "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-        #     proportion=0.1, noise_range=(0.01, 0.06), noise_step=0.01, border_width=0.25
-        # ),
-        # "hf_pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
-        #     proportion=0.1, slope_range=(0.0, 0.4), platform_width=2.0, border_width=0.25
-        # ),
-        # "hf_pyramid_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
-        #     proportion=0.1, slope_range=(0.0, 0.4), platform_width=2.0, border_width=0.25
-        # ),
-        # "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-        #     proportion=0.2, grid_width=0.45, grid_height_range=(0.05, 0.2), platform_width=2.0
-        # ),
-        # "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-        #     proportion=0.2,
-        #     step_height_range=(0.05, 0.23),
-        #     step_width=0.3,
-        #     platform_width=3.0,
-        #     border_width=1.0,
-        #     holes=False,
-        # ),
-        # "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-        #     proportion=0.2,
-        #     step_height_range=(0.05, 0.23),
-        #     step_width=0.3,
-        #     platform_width=3.0,
-        #     border_width=1.0,
-        #     holes=False,
-        # ),
+        "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
+            proportion=0.1, noise_range=(0.01, 0.06), noise_step=0.01, border_width=0.25
+        ),
+        "hf_pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+            proportion=0.1, slope_range=(0.0, 0.4), platform_width=2.0, border_width=0.25
+        ),
+        "hf_pyramid_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
+            proportion=0.1, slope_range=(0.0, 0.4), platform_width=2.0, border_width=0.25
+        ),
+        "boxes": terrain_gen.MeshRandomGridTerrainCfg(
+            proportion=0.2, grid_width=0.45, grid_height_range=(0.05, 0.2), platform_width=2.0
+        ),
+        "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
+            proportion=0.2,
+            step_height_range=(0.05, 0.23),
+            step_width=0.3,
+            platform_width=3.0,
+            border_width=1.0,
+            holes=False,
+        ),
+        "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+            proportion=0.2,
+            step_height_range=(0.05, 0.23),
+            step_width=0.3,
+            platform_width=3.0,
+            border_width=1.0,
+            holes=False,
+        ),
     },
 )
 
@@ -300,21 +300,28 @@ class RewardsCfg:
         },
     )
     
-    # base_height_l2 = RewTerm(
-    #     func=mdp.base_height_l2, weight=-2.0, params={"target_height": 0.4}
-    # )
+    base_height_l2 = RewTerm(
+        func=mdp.base_height_l2, weight=-1, params={"target_height": 0.38}
+    )
 
 
     # -- feet
-    feet_air_time = RewTerm(
-        func=mdp.feet_air_time,
-        weight=0.1,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-            "command_name": "base_velocity",
-            "threshold": 0.5,
-        },
+    # feet_air_time = RewTerm(
+    #     func=mdp.feet_air_time,
+    #     weight=0.1,
+    #     params={
+    #         "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+    #         "command_name": "base_velocity",
+    #         "threshold": 0.5,
+    #     },
+    # )
+    
+    feet_stumble = RewTerm(
+        func=mdp.feet_stumble,
+        weight=-2.0,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot")},
     )
+    
     air_time_variance = RewTerm(
         func=mdp.air_time_variance_penalty,
         weight=-1.0,
@@ -322,7 +329,7 @@ class RewardsCfg:
     )
     feet_slide = RewTerm(
         func=mdp.feet_slide,
-        weight=-0.8,
+        weight=-0.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
@@ -331,7 +338,7 @@ class RewardsCfg:
     
     feet_height_body = RewTerm(
         func=mdp.feet_height_body,
-        weight=1.5,
+        weight=1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "command_name": "base_velocity",
@@ -340,20 +347,9 @@ class RewardsCfg:
         }
     )
     
-    # foot_clearance_reward = RewTerm(
-    #     func=mdp.foot_clearance_reward,
-    #     weight=0.5,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
-    #         "target_height": 0.10,
-    #         "std": math.sqrt(0.5),
-    #         "tanh_mult": 2.0,
-    #     }
-    # )
-    
     feet_gait = RewTerm(
         func=mdp.feet_gait,
-        weight=0.8,
+        weight=0.2,
         params={
             "period": 0.7,  # 步态周期
             "offset": [0.0, 0.5, 0.5, 0.0],  # 四条腿的相位偏移（LF, RF, LH, RH）
@@ -363,35 +359,18 @@ class RewardsCfg:
         },
     )
 
-    # feet_gait = RewTerm(
-    #     func=mdp.GaitReward,
-    #     weight=5,
-    #     params={
-    #         "std": math.sqrt(0.5),
-    #         "command_name": "base_velocity",
-    #         "max_err": 0.2,
-    #         "velocity_threshold": 0.5,
-    #         "command_threshold": 0.1,
-    #         "synced_feet_pair_names": (
-    #             ("FL_foot", "RR_foot"),
-    #             ("FR_foot", "RL_foot")
-    #         ),
-    #         "asset_cfg": SceneEntityCfg("robot"),
-    #         "sensor_cfg": SceneEntityCfg("contact_forces")
-    #     }
-    # )
 
-    # joint_mirror = RewTerm(
-    #     func=mdp.joint_mirror,
-    #     weight=-0.05,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot"),
-    #         "mirror_joints": [
-    #             ["FR_(thigh|calf).*", "RL_(thigh|calf).*"],
-    #             ["FL_(thigh|calf).*", "RR_(thigh|calf).*"]
-    #         ]
-    #     }
-    # )
+    joint_mirror = RewTerm(
+        func=mdp.joint_mirror,
+        weight=-0.01,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "mirror_joints": [
+                ["FR_(thigh|calf).*", "RL_(thigh|calf).*"],
+                ["FL_(thigh|calf).*", "RR_(thigh|calf).*"]
+            ]
+        }
+    )
 
     # -- other
     undesired_contacts = RewTerm(
