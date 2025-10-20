@@ -300,9 +300,9 @@ class RewardsCfg:
         },
     )
     
-    base_height_l2 = RewTerm(
-        func=mdp.base_height_l2, weight=-2.0, params={"target_height": 0.38}
-    )
+    # base_height_l2 = RewTerm(
+    #     func=mdp.base_height_l2, weight=-2.0, params={"target_height": 0.38}
+    # )
 
 
     # -- feet
@@ -329,16 +329,16 @@ class RewardsCfg:
         },
     )
     
-    feet_height_body = RewTerm(
-        func=mdp.feet_height_body,
-        weight=1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
-            "command_name": "base_velocity",
-            "target_height": -0.2,  
-            "tanh_mult": 2.0,    
-        }
-    )
+    # feet_height_body = RewTerm(
+    #     func=mdp.feet_height_body,
+    #     weight=1.0,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+    #         "command_name": "base_velocity",
+    #         "target_height": -0.2,  
+    #         "tanh_mult": 2.0,    
+    #     }
+    # )
     # feet_gait = RewTerm(
     #     func=mdp.feet_gait,
     #     weight=0.2,
@@ -353,7 +353,7 @@ class RewardsCfg:
     
     feet_gait = RewTerm(
         func=mdp.raibert_heuristic,
-        weight=1.0,
+        weight=-3.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "command_name": "base_velocity",

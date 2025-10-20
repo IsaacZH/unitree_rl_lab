@@ -250,14 +250,15 @@ def raibert_heuristic(
     cur_footpos_translated = asset.data.body_pos_w[:, asset_cfg.body_ids, :] - asset.data.root_pos_w[:, :].unsqueeze(1)
     footpos_in_body_frame = torch.zeros(env.num_envs, len(asset_cfg.body_ids), 3, device=env.device)
     
+    root_yaw_quat = math_utils.yaw_quat(asset.data.root_quat_w)
     for i in range(len(asset_cfg.body_ids)):
-        footpos_in_body_frame[:, i, :] = math_utils.quat_apply_yaw(
-            asset.data.root_quat_w, cur_footpos_translated[:, i, :]
+        footpos_in_body_frame[:, i, :] = math_utils.quat_apply_inverse(
+            root_yaw_quat, cur_footpos_translated[:, i, :]
         )
         
-    # nominal positions: [FR, FL, RR, RL]
+    # nominal positions: [FL, FR, RL, RR]
     desired_stance_width = 0.3
-    desired_ys_nom = torch.tensor([desired_stance_width / 2,  -desired_stance_width / 2, 
+    desired_ys_nom = torch.tensor([desired_stance_width / 2, -desired_stance_width / 2,
                                    desired_stance_width / 2, -desired_stance_width / 2], 
                                   device=env.device).unsqueeze(0)
 
@@ -283,12 +284,12 @@ def raibert_heuristic(
     # Create base phases with batch dimension
     base_phase = env.gait_indices.unsqueeze(-1)  # [batch_size, 1]
     
-    # Define offsets for each leg [FR, FL, RR, RL]
+    # Define offsets for each leg [FL, FR, RL, RR]
     leg_offsets = torch.tensor([
-        cmd_phases + cmd_offsets + cmd_bounds,  # FR: +0.5
         cmd_offsets,                           # FL: 0
+        cmd_phases + cmd_offsets + cmd_bounds,  # FR: +0.5
+        cmd_phases,                             # RL: +0.5
         cmd_bounds,                            # RR: 0
-        cmd_phases                             # RL: +0.5
     ], device=env.device)
     
     # Broadcast base_phase to all legs and add offsets
