@@ -20,7 +20,7 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from unitree_rl_lab.assets.robots.unitree import UNITREE_GO2_CFG as ROBOT_CFG
 from unitree_rl_lab.tasks.wtw_locomotion import mdp
-
+from unitree_rl_lab.tasks.wtw_locomotion.sensors import GaitSensorCfg
 COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
     size=(8.0, 8.0),
     border_width=20.0,
@@ -102,6 +102,7 @@ class RobotSceneCfg(InteractiveSceneCfg):
         mesh_prim_paths=["/World/ground"],
     )
     contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True)
+    gait = GaitSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/base", debug_vis=False)
     # lights
     sky_light = AssetBaseCfg(
         prim_path="/World/skyLight",
@@ -356,6 +357,7 @@ class RewardsCfg:
         weight=-3.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+            "sensor_cfg": SceneEntityCfg("gait"),
             "command_name": "base_velocity",
         },
     )

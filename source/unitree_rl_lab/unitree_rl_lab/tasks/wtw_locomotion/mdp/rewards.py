@@ -7,6 +7,7 @@ import isaaclab.utils.math as math_utils
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import ContactSensor
+from unitree_rl_lab.tasks.wtw_locomotion.sensors import GaitSensor
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -242,10 +243,12 @@ def feet_gait(
 def raibert_heuristic(
     env: ManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg,
+    sensor_cfg: SceneEntityCfg,
     command_name: str = "base_velocity",
 ) -> torch.Tensor:
     
     asset: RigidObject = env.scene[asset_cfg.name]
+    gait_sensor: GaitSensor = env.scene.sensors[sensor_cfg.name]
 
     cur_footpos_translated = asset.data.body_pos_w[:, asset_cfg.body_ids, :] - asset.data.root_pos_w[:, :].unsqueeze(1)
     footpos_in_body_frame = torch.zeros(env.num_envs, len(asset_cfg.body_ids), 3, device=env.device)
@@ -270,11 +273,11 @@ def raibert_heuristic(
     # raibert offsets
     cmd_frequencies = 3.0
     
-    if not hasattr(env, "gait_indices") or env.gait_indices is None:
-        #  Initialize gait phases for each env
-        env.gait_indices = torch.zeros(env.num_envs, device=env.device)
+    # if not hasattr(env, "gait_indices") or env.gait_indices is None:
+    #     #  Initialize gait phases for each env
+    #     env.gait_indices = torch.zeros(env.num_envs, device=env.device)
 
-    env.gait_indices = torch.remainder(env.gait_indices + env.cfg.sim.dt * cmd_frequencies, 1.0)
+    # env.gait_indices = torch.remainder(env.gait_indices + env.cfg.sim.dt * cmd_frequencies, 1.0)
 
     # Create phase offsets for each leg
     cmd_phases = 0.5
@@ -282,7 +285,7 @@ def raibert_heuristic(
     cmd_bounds = 0.0
     
     # Create base phases with batch dimension
-    base_phase = env.gait_indices.unsqueeze(-1)  # [batch_size, 1]
+    base_phase = gait_sensor.data.gait_indices.unsqueeze(-1)  # [batch_size, 1]
     
     # Define offsets for each leg [FL, FR, RL, RR]
     leg_offsets = torch.tensor([
