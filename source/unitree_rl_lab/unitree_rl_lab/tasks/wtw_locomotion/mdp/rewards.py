@@ -240,6 +240,7 @@ def tracking_contacts_shaped_force(
     env: ManagerBasedRLEnv,
     gait_sensor_cfg: SceneEntityCfg,
     contact_sensor_cfg: SceneEntityCfg,
+    command_name: str = "base_velocity",
 ) -> torch.Tensor:
     """
     Reward that penalizes foot forces on swing legs and shapes contact forces.
@@ -267,6 +268,7 @@ def tracking_contacts_shaped_force(
 
     # 4. 每条腿平均
     reward = torch.mean(reward_per_leg, dim=1)  # [num_envs]
+    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
 
     return reward
 
@@ -274,6 +276,7 @@ def tracking_contacts_shaped_velocity(
     env: ManagerBasedRLEnv,
     gait_sensor_cfg: SceneEntityCfg,
     asset_cfg: SceneEntityCfg,
+    command_name: str = "base_velocity",
 ) -> torch.Tensor:
     """
     Penalize foot velocities on stance legs. Swing legs are not penalized.
@@ -305,6 +308,7 @@ def tracking_contacts_shaped_velocity(
 
     # 4. 对四条腿平均
     reward = torch.mean(reward_per_leg, dim=1)  # [num_envs]
+    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
 
     return reward
 
@@ -315,6 +319,7 @@ def feet_clearance_cmd_linear(
     asset_cfg: SceneEntityCfg,
     sensor_cfg: SceneEntityCfg,
     target_height: float,
+    command_name: str = "base_velocity",
 ) -> torch.Tensor:
     
     asset: RigidObject = env.scene[asset_cfg.name]
@@ -330,9 +335,12 @@ def feet_clearance_cmd_linear(
     phases = 1 - torch.abs(1.0 - torch.clip((gait_sensor.data.foot_indices * 2.0) - 1.0, 0.0, 1.0) * 2.0)
     foot_height = (asset.data.body_pos_w[:, asset_cfg.body_ids, 2]).view(env.num_envs, -1)
     # foot_height = (footpos_in_body_frame[:, :, 2]).view(env.num_envs, -1)
-    target_foot_height = target_height * phases + 0.02 # offset for foot radius 2cm
+    target_foot_height = target_height * phases + 0.02
     rew_foot_clearance = torch.square(target_foot_height - foot_height) * (1 - gait_sensor.data.desired_contact_states)
-    return torch.sum(rew_foot_clearance, dim=1)
+    reward = torch.sum(rew_foot_clearance, dim=1)
+    # 当没有速度指令时不抬腿
+    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
+    return reward
 
 def raibert_heuristic(
     env: ManagerBasedRLEnv,
@@ -391,7 +399,7 @@ def raibert_heuristic(
     err_raibert_heuristic = torch.abs(desired_footsteps_body_frame - footpos_in_body_frame[:, :, 0:2])
 
     reward = torch.sum(torch.square(err_raibert_heuristic), dim=(1, 2))
-
+    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
     return reward
 
 """

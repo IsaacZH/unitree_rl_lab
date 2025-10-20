@@ -291,15 +291,15 @@ class RewardsCfg:
     # -- robot
     flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-2.5)
 
-    # joint_pos = RewTerm(
-    #     func=mdp.joint_position_penalty,
-    #     weight=-0.7,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-    #         "stand_still_scale": 5.0,
-    #         "velocity_threshold": 0.3,
-    #     },
-    # )
+    joint_pos = RewTerm(
+        func=mdp.joint_position_penalty,
+        weight=-0.7,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "stand_still_scale": 5.0,
+            "velocity_threshold": 0.3,
+        },
+    )
     
     # base_height_l2 = RewTerm(
     #     func=mdp.base_height_l2, weight=-0.5, params={"target_height": 0.38}
@@ -316,14 +316,14 @@ class RewardsCfg:
     #         "threshold": 0.5,
     #     },
     # )
-    feet_contact_without_cmd = RewTerm(
-        func=mdp.feet_contact_without_cmd,
-        weight=1.0,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-            "command_name": "base_velocity",
-        },
-    )
+    # feet_contact_without_cmd = RewTerm(
+    #     func=mdp.feet_contact_without_cmd,
+    #     weight=1.0,
+    #     params={
+    #         "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+    #         "command_name": "base_velocity",
+    #     },
+    # )
     
     air_time_variance = RewTerm(
         func=mdp.air_time_variance_penalty,
