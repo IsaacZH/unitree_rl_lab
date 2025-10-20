@@ -291,18 +291,18 @@ class RewardsCfg:
     # -- robot
     flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-2.5)
 
-    joint_pos = RewTerm(
-        func=mdp.joint_position_penalty,
-        weight=-0.7,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-            "stand_still_scale": 5.0,
-            "velocity_threshold": 0.3,
-        },
-    )
+    # joint_pos = RewTerm(
+    #     func=mdp.joint_position_penalty,
+    #     weight=-0.7,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+    #         "stand_still_scale": 5.0,
+    #         "velocity_threshold": 0.3,
+    #     },
+    # )
     
     # base_height_l2 = RewTerm(
-    #     func=mdp.base_height_l2, weight=-2.0, params={"target_height": 0.38}
+    #     func=mdp.base_height_l2, weight=-0.5, params={"target_height": 0.38}
     # )
 
 
@@ -316,11 +316,21 @@ class RewardsCfg:
     #         "threshold": 0.5,
     #     },
     # )
-    # air_time_variance = RewTerm(
-    #     func=mdp.air_time_variance_penalty,
-    #     weight=-1.0,
-    #     params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot")},
-    # )
+    feet_contact_without_cmd = RewTerm(
+        func=mdp.feet_contact_without_cmd,
+        weight=1.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+            "command_name": "base_velocity",
+        },
+    )
+    
+    air_time_variance = RewTerm(
+        func=mdp.air_time_variance_penalty,
+        weight=-1.0,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot")},
+    )
+    
     feet_slide = RewTerm(
         func=mdp.feet_slide,
         weight=-0.5,
@@ -330,31 +340,9 @@ class RewardsCfg:
         },
     )
     
-    # feet_height_body = RewTerm(
-    #     func=mdp.feet_height_body,
-    #     weight=1.0,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
-    #         "command_name": "base_velocity",
-    #         "target_height": -0.2,  
-    #         "tanh_mult": 2.0,    
-    #     }
-    # )
-    # feet_gait = RewTerm(
-    #     func=mdp.feet_gait,
-    #     weight=0.2,
-    #     params={
-    #         "period": 0.7,  # 步态周期
-    #         "offset": [0.0, 0.5, 0.5, 0.0],  # 四条腿的相位偏移（LF, RF, LH, RH）
-    #         "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-    #         "threshold": 0.5,  # 支撑相比例
-    #         "command_name": "base_velocity",
-    #     },
-    # )
-    
     feet_gait = RewTerm(
         func=mdp.raibert_heuristic,
-        weight=-3.0,
+        weight=-5.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "sensor_cfg": SceneEntityCfg("gait"),
@@ -364,14 +352,31 @@ class RewardsCfg:
 
     feet_clearance_cmd_linear = RewTerm(
         func=mdp.feet_clearance_cmd_linear,
-        weight=-2.0,
+        weight=-2.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "sensor_cfg": SceneEntityCfg("gait"),
             "target_height": 0.2,
         },
     )
-
+    
+    tracking_contacts_shaped_velocity = RewTerm(
+        func=mdp.tracking_contacts_shaped_velocity,
+        weight=1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+            "gait_sensor_cfg": SceneEntityCfg("gait"),
+        },
+    )
+        
+    tracking_contacts_shaped_force = RewTerm(
+        func=mdp.tracking_contacts_shaped_force,
+        weight=1.0,
+        params={
+            "gait_sensor_cfg": SceneEntityCfg("gait"),
+            "contact_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+        },
+    )
     # joint_mirror = RewTerm(
     #     func=mdp.joint_mirror,
     #     weight=-0.05,
@@ -387,7 +392,7 @@ class RewardsCfg:
     # -- other
     undesired_contacts = RewTerm(
         func=mdp.undesired_contacts,
-        weight=-1,
+        weight=-5,
         params={
             "threshold": 1,
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["Head_.*", ".*_hip", ".*_thigh", ".*_calf"]),

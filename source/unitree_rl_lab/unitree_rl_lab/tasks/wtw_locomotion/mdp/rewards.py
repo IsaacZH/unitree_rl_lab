@@ -246,13 +246,8 @@ def tracking_contacts_shaped_force(
 
     Args:
         env: the environment
-        asset_cfg: robot asset config
         gait_sensor_cfg: gait sensor config
         contact_sensor_cfg: contact sensor config
-        target_height: not used here, included for API consistency
-
-    Returns:
-        reward: Tensor of shape [num_envs]
     """
     gait_sensor: GaitSensor = env.scene.sensors[gait_sensor_cfg.name]
     contact_sensor: ContactSensor = env.scene.sensors[contact_sensor_cfg.name]
@@ -271,6 +266,44 @@ def tracking_contacts_shaped_force(
     reward_per_leg = -swing_mask * (1.0 - torch.exp(-foot_forces**2 / gait_force_sigma))  # [num_envs, 4]
 
     # 4. 每条腿平均
+    reward = torch.mean(reward_per_leg, dim=1)  # [num_envs]
+
+    return reward
+
+def tracking_contacts_shaped_velocity(
+    env: ManagerBasedRLEnv,
+    gait_sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """
+    Penalize foot velocities on stance legs. Swing legs are not penalized.
+
+    Args:
+        env: environment
+        gait_sensor_cfg: gait sensor config
+        asset_cfg: robot asset config
+
+    Returns:
+        reward: Tensor of shape [num_envs]
+    """
+
+    gait_sensor: GaitSensor = env.scene.sensors[gait_sensor_cfg.name]
+    asset: RigidObject = env.scene[asset_cfg.name]
+
+    # 1. 脚速度 L2 norm
+    foot_velocities = torch.norm(
+        asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :], dim=-1
+    )  # [num_envs, num_feet]
+
+    # 2. 支撑腿 mask
+    desired_contact = gait_sensor.data.desired_contact_states  # [num_envs, 4]
+    stance_mask = desired_contact  # 1: stance leg, 0: swing leg
+
+    # 3. 奖励/惩罚公式（速度越大惩罚越大）
+    gait_vel_sigma = 10.0
+    reward_per_leg = -stance_mask * (1 - torch.exp(-foot_velocities**2 / gait_vel_sigma))  # [num_envs, 4]
+
+    # 4. 对四条腿平均
     reward = torch.mean(reward_per_leg, dim=1)  # [num_envs]
 
     return reward
@@ -321,7 +354,7 @@ def raibert_heuristic(
         )
         
     # nominal positions: [FL, FR, RL, RR]
-    desired_stance_width = 0.3
+    desired_stance_width = 0.35
     desired_ys_nom = torch.tensor([desired_stance_width / 2, -desired_stance_width / 2,
                                    desired_stance_width / 2, -desired_stance_width / 2], 
                                   device=env.device).unsqueeze(0)
@@ -332,26 +365,7 @@ def raibert_heuristic(
                                   device=env.device).unsqueeze(0)
 
     # raibert offsets
-    cmd_frequencies = 3.0
-    
-    # # Create phase offsets for each leg
-    # cmd_phases = 0.5
-    # cmd_offsets = 0.0
-    # cmd_bounds = 0.0
-    
-    # # Create base phases with batch dimension
-    # base_phase = gait_sensor.data.gait_indices.unsqueeze(-1)  # [batch_size, 1]
-    
-    # # Define offsets for each leg [FL, FR, RL, RR]
-    # leg_offsets = torch.tensor([
-    #     cmd_offsets,                           # FL: 0
-    #     cmd_phases + cmd_offsets + cmd_bounds,  # FR: +0.5
-    #     cmd_phases,                             # RL: +0.5
-    #     cmd_bounds,                            # RR: 0
-    # ], device=env.device)
-    
-    # # Broadcast base_phase to all legs and add offsets
-    # foot_indices = torch.remainder(base_phase + leg_offsets.unsqueeze(0), 1.0)  # [batch_size, 4]
+    cmd_frequencies = 3
     
     # Calculate phases for all legs
     phases = (torch.abs(1.0 - (gait_sensor.data.foot_indices * 2.0)) * 1.0 - 0.5).unsqueeze(-1)  # [batch_size, 4, 1]
