@@ -210,35 +210,96 @@ def air_time_variance_penalty(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg
 Feet Gait rewards.
 """
 
+# def base_height_l2(
+#     env: ManagerBasedRLEnv,
+#     target_height: float,
+#     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+#     sensor_cfg: SceneEntityCfg | None = None,
+# ) -> torch.Tensor:
+#     """Penalize asset height from its target using L2 squared kernel.
 
-def feet_gait(
+#     Note:
+#         For flat terrain, target height is in the world frame. For rough terrain,
+#         sensor readings can adjust the target height to account for the terrain.
+#     """
+#     # extract the used quantities (to enable type-hinting)
+#     asset: RigidObject = env.scene[asset_cfg.name]
+#     if sensor_cfg is not None:
+#         sensor: RayCaster = env.scene[sensor_cfg.name]
+#         # Adjust the target height using the sensor data
+#         adjusted_target_height = target_height + torch.mean(sensor.data.ray_hits_w[..., 2], dim=1)
+#     else:
+#         # Use the provided target height directly for flat terrain
+#         adjusted_target_height = target_height
+#     # Compute the L2 squared penalty
+#     return torch.square(asset.data.root_pos_w[:, 2] - adjusted_target_height)
+
+
+
+def tracking_contacts_shaped_force(
     env: ManagerBasedRLEnv,
-    period: float,
-    offset: list[float],
-    sensor_cfg: SceneEntityCfg,
-    threshold: float = 0.5,
-    command_name=None,
+    gait_sensor_cfg: SceneEntityCfg,
+    contact_sensor_cfg: SceneEntityCfg,
 ) -> torch.Tensor:
-    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
-    is_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0
+    """
+    Reward that penalizes foot forces on swing legs and shapes contact forces.
 
-    global_phase = ((env.episode_length_buf * env.step_dt) % period / period).unsqueeze(1)
-    phases = []
-    for offset_ in offset:
-        phase = (global_phase + offset_) % 1.0
-        phases.append(phase)
-    leg_phase = torch.cat(phases, dim=-1)
+    Args:
+        env: the environment
+        asset_cfg: robot asset config
+        gait_sensor_cfg: gait sensor config
+        contact_sensor_cfg: contact sensor config
+        target_height: not used here, included for API consistency
 
-    reward = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
-    for i in range(len(sensor_cfg.body_ids)):
-        is_stance = leg_phase[:, i] < threshold
-        reward += ~(is_stance ^ is_contact[:, i])
+    Returns:
+        reward: Tensor of shape [num_envs]
+    """
+    gait_sensor: GaitSensor = env.scene.sensors[gait_sensor_cfg.name]
+    contact_sensor: ContactSensor = env.scene.sensors[contact_sensor_cfg.name]
 
-    if command_name is not None:
-        cmd_norm = torch.norm(env.command_manager.get_command(command_name), dim=1)
-        reward *= cmd_norm > 0.1
+    # 1. 获得每条腿的总力（norm）
+    foot_forces = torch.norm(
+        contact_sensor.data.net_forces_w[:, contact_sensor_cfg.body_ids, :], dim=-1
+    )  # [num_envs, num_feet]
+
+    # 2. 获得期望接触状态
+    desired_contact = gait_sensor.data.desired_contact_states  # [num_envs, 4]
+
+    # 3. 惩罚 swing leg 的接触力，reward 越大越好（非支撑腿力越小）
+    gait_force_sigma = 100.0
+    swing_mask = 1.0 - desired_contact  # 1: swing leg, 0: stance leg
+    reward_per_leg = -swing_mask * (1.0 - torch.exp(-foot_forces**2 / gait_force_sigma))  # [num_envs, 4]
+
+    # 4. 每条腿平均
+    reward = torch.mean(reward_per_leg, dim=1)  # [num_envs]
+
     return reward
 
+
+
+def feet_clearance_cmd_linear(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    sensor_cfg: SceneEntityCfg,
+    target_height: float,
+) -> torch.Tensor:
+    
+    asset: RigidObject = env.scene[asset_cfg.name]
+    gait_sensor: GaitSensor = env.scene.sensors[sensor_cfg.name]
+    
+    cur_footpos_translated = asset.data.body_pos_w[:, asset_cfg.body_ids, :] - asset.data.root_pos_w[:, :].unsqueeze(1)
+    footpos_in_body_frame = torch.zeros(env.num_envs, len(asset_cfg.body_ids), 3, device=env.device)
+    for i in range(len(asset_cfg.body_ids)):
+        footpos_in_body_frame[:, i, :] = math_utils.quat_apply_inverse(
+            asset.data.root_quat_w, cur_footpos_translated[:, i, :]
+        )
+    
+    phases = 1 - torch.abs(1.0 - torch.clip((gait_sensor.data.foot_indices * 2.0) - 1.0, 0.0, 1.0) * 2.0)
+    foot_height = (asset.data.body_pos_w[:, asset_cfg.body_ids, 2]).view(env.num_envs, -1)
+    # foot_height = (footpos_in_body_frame[:, :, 2]).view(env.num_envs, -1)
+    target_foot_height = target_height * phases + 0.02 # offset for foot radius 2cm
+    rew_foot_clearance = torch.square(target_foot_height - foot_height) * (1 - gait_sensor.data.desired_contact_states)
+    return torch.sum(rew_foot_clearance, dim=1)
 
 def raibert_heuristic(
     env: ManagerBasedRLEnv,
@@ -273,33 +334,27 @@ def raibert_heuristic(
     # raibert offsets
     cmd_frequencies = 3.0
     
-    # if not hasattr(env, "gait_indices") or env.gait_indices is None:
-    #     #  Initialize gait phases for each env
-    #     env.gait_indices = torch.zeros(env.num_envs, device=env.device)
-
-    # env.gait_indices = torch.remainder(env.gait_indices + env.cfg.sim.dt * cmd_frequencies, 1.0)
-
-    # Create phase offsets for each leg
-    cmd_phases = 0.5
-    cmd_offsets = 0.0
-    cmd_bounds = 0.0
+    # # Create phase offsets for each leg
+    # cmd_phases = 0.5
+    # cmd_offsets = 0.0
+    # cmd_bounds = 0.0
     
-    # Create base phases with batch dimension
-    base_phase = gait_sensor.data.gait_indices.unsqueeze(-1)  # [batch_size, 1]
+    # # Create base phases with batch dimension
+    # base_phase = gait_sensor.data.gait_indices.unsqueeze(-1)  # [batch_size, 1]
     
-    # Define offsets for each leg [FL, FR, RL, RR]
-    leg_offsets = torch.tensor([
-        cmd_offsets,                           # FL: 0
-        cmd_phases + cmd_offsets + cmd_bounds,  # FR: +0.5
-        cmd_phases,                             # RL: +0.5
-        cmd_bounds,                            # RR: 0
-    ], device=env.device)
+    # # Define offsets for each leg [FL, FR, RL, RR]
+    # leg_offsets = torch.tensor([
+    #     cmd_offsets,                           # FL: 0
+    #     cmd_phases + cmd_offsets + cmd_bounds,  # FR: +0.5
+    #     cmd_phases,                             # RL: +0.5
+    #     cmd_bounds,                            # RR: 0
+    # ], device=env.device)
     
-    # Broadcast base_phase to all legs and add offsets
-    foot_indices = torch.remainder(base_phase + leg_offsets.unsqueeze(0), 1.0)  # [batch_size, 4]
+    # # Broadcast base_phase to all legs and add offsets
+    # foot_indices = torch.remainder(base_phase + leg_offsets.unsqueeze(0), 1.0)  # [batch_size, 4]
     
     # Calculate phases for all legs
-    phases = (torch.abs(1.0 - (foot_indices * 2.0)) * 1.0 - 0.5).unsqueeze(-1)  # [batch_size, 4, 1]
+    phases = (torch.abs(1.0 - (gait_sensor.data.foot_indices * 2.0)) * 1.0 - 0.5).unsqueeze(-1)  # [batch_size, 4, 1]
     
     x_vel_des = env.command_manager.get_command(command_name)[:, 0:1]  # [batch_size, 1]
     yaw_vel_des = env.command_manager.get_command(command_name)[:, 2:3]  # [batch_size, 1]

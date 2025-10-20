@@ -16,6 +16,7 @@ from pxr import UsdPhysics
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 from isaaclab.markers import VisualizationMarkers
+import numpy as np
 
 from isaaclab.sensors.sensor_base import SensorBase
 from .gait_data import GaitSensorData
@@ -76,10 +77,9 @@ class GaitSensor(SensorBase):
         # reset the timestamps
         super().reset(env_ids)
         # resolve None
-        if env_ids is None:
-            env_ids = slice(None)
+        idx = slice(None) if env_ids is None else env_ids
         # reset accumulative data buffers
-        self._data.gait_indices[env_ids] = 0.0
+        self._data.gait_indices[idx] = 0.0
 
     def update(self, dt: float, force_recompute: bool = False):
         # save timestamp
@@ -119,23 +119,103 @@ class GaitSensor(SensorBase):
 
     def _update_buffers_impl(self, env_ids: Sequence[int]):
         """Fills the buffers of the sensor data."""
-
-        # default to all sensors
-        if len(env_ids) == self._num_envs:
-            env_ids = slice(None)
-            
-        cmd_frequency = 3.0
+        # 规范化 env_ids：当传入的是完整集合时，转换为 slice(None)；当为空时直接返回
+        idx = env_ids  # 默认使用原始 env_ids
+        if isinstance(env_ids, slice):
+            idx = env_ids
+        else:
+            # 传入的 env_ids 可能是 list/tuple/tensor
+            if len(env_ids) == self._num_envs:
+                idx = slice(None)
+            elif len(env_ids) == 0:
+                return
         
-        self._data.gait_indices[env_ids] = torch.remainder(
-            self._data.gait_indices[env_ids] + self._sim_physics_dt * cmd_frequency,
+        # === 1. 提取 gait command 参数 ===
+        n = self._num_envs
+        device = self.device
+        frequencies = torch.full((n,), 3.0, device=device)   # 频率（Hz）
+        phases = torch.full((n,), 0.5, device=device)
+        offsets = torch.full((n,), 0.0, device=device)
+        bounds = torch.full((n,), 0.0, device=device)
+        durations = torch.full((n,), 0.5, device=device)
+
+        # === 2. 更新 gait index ===
+        self._data.gait_indices[idx] = torch.remainder(
+            self._data.gait_indices[idx] + self._sim_physics_dt * frequencies[idx],
             1.0
         )
+
+        # === 3. 计算 foot indices（4 条腿）[FL, FR, RL, RR]===
+        gait_idx_sel = self._data.gait_indices[idx]
+        phases_sel = phases[idx]
+        offsets_sel = offsets[idx]
+        bounds_sel = bounds[idx]
+        durations_sel = durations[idx]
+
+        fi_list = [
+            gait_idx_sel + offsets_sel,                                        # FL
+            gait_idx_sel + phases_sel + offsets_sel + bounds_sel,              # FR
+            gait_idx_sel + phases_sel,                                         # RL
+            gait_idx_sel + bounds_sel                                          # RR
+        ]
+        # 形状 (m, 4)
+        foot_indices_sel = torch.remainder(torch.stack(fi_list, dim=1), 1.0)
+        self._data.foot_indices[idx] = foot_indices_sel
+
+        # === 4. 按 durations warp 重新映射 stance/swing ===
+        # foot_indices_sel ∈ [0, 1)，可直接使用
+        for j in range(4):
+            phase_j = foot_indices_sel[:, j]
+            stance_mask = phase_j < durations_sel
+            swing_mask = phase_j > durations_sel
+            # stance: [0, durations) -> [0, 0.5)
+            foot_indices_sel[stance_mask, j] = phase_j[stance_mask] * (0.5 / durations_sel[stance_mask])
+            # swing: (durations, 1) -> [0.5, 1)
+            foot_indices_sel[swing_mask, j] = 0.5 + (phase_j[swing_mask] - durations_sel[swing_mask]) * (
+                0.5 / (1 - durations_sel[swing_mask])
+            )
+            
+
+        # === 6. 生成时钟信号（sin 输入）===
+        clock_inputs_sel = torch.sin(2 * np.pi * foot_indices_sel)
+        doubletime_clock_inputs_sel = torch.sin(4 * np.pi * foot_indices_sel)
+        halftime_clock_inputs_sel = torch.sin(1 * np.pi * foot_indices_sel)
+
+        # === 7. 平滑化 desired contact states ===
+        kappa = 0.07
+        smoothing_cdf_start = torch.distributions.normal.Normal(0, kappa).cdf
+
+        def smoothing_multiplier(col_tensor: torch.Tensor) -> torch.Tensor:
+            # 输入: (m,)
+            base = torch.remainder(col_tensor, 1.0)
+            term1 = smoothing_cdf_start(base) * (1 - smoothing_cdf_start(base - 0.5))
+            term2 = smoothing_cdf_start(base - 1.0) * (1 - smoothing_cdf_start(base - 0.5 - 1.0))
+            return term1 + term2
+
+        smoothing_FL = smoothing_multiplier(foot_indices_sel[:, 0])
+        smoothing_FR = smoothing_multiplier(foot_indices_sel[:, 1])
+        smoothing_RL = smoothing_multiplier(foot_indices_sel[:, 2])
+        smoothing_RR = smoothing_multiplier(foot_indices_sel[:, 3])
+        desired_contact_states_sel = torch.stack([smoothing_FL, smoothing_FR, smoothing_RL, smoothing_RR], dim=1)
+
+        # === 写回仅选择的 env ===
+        self._data.clock_inputs[idx] = clock_inputs_sel
+        self._data.doubletime_clock_inputs[idx] = doubletime_clock_inputs_sel
+        self._data.halftime_clock_inputs[idx] = halftime_clock_inputs_sel
+        self._data.desired_contact_states[idx] = desired_contact_states_sel
 
 
     def _initialize_buffers_impl(self):
         """Create buffers for storing data."""
-        # data buffers
-        self._data.gait_indices = torch.zeros(self._num_envs, device=self.device)
+        n = self._num_envs
+        device = self.device
+        self._data.gait_indices = torch.zeros(n, device=device)
+        self._data.foot_indices = torch.zeros(n, 4, device=device)
+        self._data.clock_inputs = torch.zeros(n, 4, device=device)
+        self._data.doubletime_clock_inputs = torch.zeros(n, 4, device=device)
+        self._data.halftime_clock_inputs = torch.zeros(n, 4, device=device)
+        self._data.desired_contact_states = torch.zeros(n, 4, device=device)
+
 
     # def _set_debug_vis_impl(self, debug_vis: bool):
     #     # set visibility of markers

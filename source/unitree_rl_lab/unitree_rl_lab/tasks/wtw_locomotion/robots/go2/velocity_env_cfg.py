@@ -307,20 +307,20 @@ class RewardsCfg:
 
 
     # -- feet
-    feet_air_time = RewTerm(
-        func=mdp.feet_air_time,
-        weight=0.1,
-        params={
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-            "command_name": "base_velocity",
-            "threshold": 0.5,
-        },
-    )
-    air_time_variance = RewTerm(
-        func=mdp.air_time_variance_penalty,
-        weight=-1.0,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot")},
-    )
+    # feet_air_time = RewTerm(
+    #     func=mdp.feet_air_time,
+    #     weight=0.1,
+    #     params={
+    #         "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+    #         "command_name": "base_velocity",
+    #         "threshold": 0.5,
+    #     },
+    # )
+    # air_time_variance = RewTerm(
+    #     func=mdp.air_time_variance_penalty,
+    #     weight=-1.0,
+    #     params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot")},
+    # )
     feet_slide = RewTerm(
         func=mdp.feet_slide,
         weight=-0.5,
@@ -362,18 +362,27 @@ class RewardsCfg:
         },
     )
 
-
-    joint_mirror = RewTerm(
-        func=mdp.joint_mirror,
-        weight=-0.05,
+    feet_clearance_cmd_linear = RewTerm(
+        func=mdp.feet_clearance_cmd_linear,
+        weight=-2.0,
         params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "mirror_joints": [
-                ["FR_(thigh|calf).*", "RL_(thigh|calf).*"],
-                ["FL_(thigh|calf).*", "RR_(thigh|calf).*"]
-            ]
-        }
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+            "sensor_cfg": SceneEntityCfg("gait"),
+            "target_height": 0.2,
+        },
     )
+
+    # joint_mirror = RewTerm(
+    #     func=mdp.joint_mirror,
+    #     weight=-0.05,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot"),
+    #         "mirror_joints": [
+    #             ["FR_(thigh|calf).*", "RL_(thigh|calf).*"],
+    #             ["FL_(thigh|calf).*", "RR_(thigh|calf).*"]
+    #         ]
+    #     }
+    # )
 
     # -- other
     undesired_contacts = RewTerm(
