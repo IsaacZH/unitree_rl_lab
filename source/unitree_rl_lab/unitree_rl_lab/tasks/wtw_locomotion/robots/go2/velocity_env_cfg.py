@@ -101,7 +101,7 @@ class RobotSceneCfg(InteractiveSceneCfg):
         debug_vis=False,
         mesh_prim_paths=["/World/ground"],
     )
-    contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True)
+    contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True, debug_vis=True)
     gait = GaitSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/base", debug_vis=False)
     # lights
     sky_light = AssetBaseCfg(
@@ -318,8 +318,10 @@ class RewardsCfg:
     # )
     # feet_contact_without_cmd = RewTerm(
     #     func=mdp.feet_contact_without_cmd,
-    #     weight=1.0,
+    #     weight=0.5,
     #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+    #         "velocity_threshold": 0.06,
     #         "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
     #         "command_name": "base_velocity",
     #     },
@@ -355,7 +357,8 @@ class RewardsCfg:
         weight=-2.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
-            "sensor_cfg": SceneEntityCfg("gait"),
+            "gait_sensor_cfg": SceneEntityCfg("gait"),
+            "ray_sensor_cfg": SceneEntityCfg("height_scanner"),
             "target_height": 0.2,
         },
     )

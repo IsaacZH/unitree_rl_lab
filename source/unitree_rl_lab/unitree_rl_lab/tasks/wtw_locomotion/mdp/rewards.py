@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import isaaclab.utils.math as math_utils
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.sensors import ContactSensor
+from isaaclab.sensors import ContactSensor, RayCaster
 from unitree_rl_lab.tasks.wtw_locomotion.sensors import GaitSensor
 
 if TYPE_CHECKING:
@@ -178,18 +178,21 @@ def feet_too_near(
 
 
 def feet_contact_without_cmd(
-    env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, command_name: str = "base_velocity"
+    env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg, 
+    velocity_threshold: float, command_name: str = "base_velocity"
 ) -> torch.Tensor:
     """
-    Reward for feet contact when the command is zero.
+    Reward for feet contact when the command is zero and robot is not moving.
     """
-    # asset: Articulation = env.scene[asset_cfg.name]
+    asset: Articulation = env.scene[asset_cfg.name]
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     is_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0
 
     command_norm = torch.norm(env.command_manager.get_command(command_name), dim=1)
+    body_vel = torch.linalg.norm(asset.data.root_lin_vel_b[:, :2], dim=1)
+    mask = (command_norm < 0.1) & (body_vel < velocity_threshold)
     reward = torch.sum(is_contact, dim=-1).float()
-    return reward * (command_norm < 0.1)
+    return reward * mask.float()
 
 
 def air_time_variance_penalty(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
@@ -317,25 +320,26 @@ def tracking_contacts_shaped_velocity(
 def feet_clearance_cmd_linear(
     env: ManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg,
-    sensor_cfg: SceneEntityCfg,
+    gait_sensor_cfg: SceneEntityCfg,
     target_height: float,
+    ray_sensor_cfg: SceneEntityCfg | None = None,
     command_name: str = "base_velocity",
 ) -> torch.Tensor:
     
     asset: RigidObject = env.scene[asset_cfg.name]
-    gait_sensor: GaitSensor = env.scene.sensors[sensor_cfg.name]
+    gait_sensor: GaitSensor = env.scene.sensors[gait_sensor_cfg.name]
     
-    cur_footpos_translated = asset.data.body_pos_w[:, asset_cfg.body_ids, :] - asset.data.root_pos_w[:, :].unsqueeze(1)
-    footpos_in_body_frame = torch.zeros(env.num_envs, len(asset_cfg.body_ids), 3, device=env.device)
-    for i in range(len(asset_cfg.body_ids)):
-        footpos_in_body_frame[:, i, :] = math_utils.quat_apply_inverse(
-            asset.data.root_quat_w, cur_footpos_translated[:, i, :]
-        )
-    
+    if ray_sensor_cfg is not None:
+        sensor: RayCaster = env.scene[ray_sensor_cfg.name]
+        # Adjust the target height using the sensor data
+        ground_height = torch.mean(sensor.data.ray_hits_w[..., 2], dim=1, keepdim=True)
+    else:
+        # Use the provided target height directly for flat terrain
+        ground_height = 0
+
     phases = 1 - torch.abs(1.0 - torch.clip((gait_sensor.data.foot_indices * 2.0) - 1.0, 0.0, 1.0) * 2.0)
     foot_height = (asset.data.body_pos_w[:, asset_cfg.body_ids, 2]).view(env.num_envs, -1)
-    # foot_height = (footpos_in_body_frame[:, :, 2]).view(env.num_envs, -1)
-    target_foot_height = target_height * phases + 0.02
+    target_foot_height = target_height * phases + 0.02 + ground_height
     rew_foot_clearance = torch.square(target_foot_height - foot_height) * (1 - gait_sensor.data.desired_contact_states)
     reward = torch.sum(rew_foot_clearance, dim=1)
     # 当没有速度指令时不抬腿

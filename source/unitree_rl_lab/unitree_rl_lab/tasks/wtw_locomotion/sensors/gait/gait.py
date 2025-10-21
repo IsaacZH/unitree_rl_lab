@@ -217,42 +217,42 @@ class GaitSensor(SensorBase):
         self._data.desired_contact_states = torch.zeros(n, 4, device=device)
 
 
-    # def _set_debug_vis_impl(self, debug_vis: bool):
-    #     # set visibility of markers
-    #     # note: parent only deals with callbacks. not their visibility
-    #     if debug_vis:
-    #         # create markers if necessary for the first time
-    #         if not hasattr(self, "acceleration_visualizer"):
-    #             self.acceleration_visualizer = VisualizationMarkers(self.cfg.visualizer_cfg)
-    #         # set their visibility to true
-    #         self.acceleration_visualizer.set_visibility(True)
-    #     else:
-    #         if hasattr(self, "acceleration_visualizer"):
-    #             self.acceleration_visualizer.set_visibility(False)
+    def _set_debug_vis_impl(self, debug_vis: bool):
+        if debug_vis:
+            if not hasattr(self, "stance_swing_vis"):
+                from isaaclab.markers import VisualizationMarkers
+                from isaaclab.markers.marker_cfg import VisualizationMarkersCfg
+                vis_cfg = VisualizationMarkersCfg(
+                    markers={
+                        "stance": {"type": "sphere", "scale": (0.03, 0.03, 0.03), "color": (0.0, 1.0, 0.0, 1.0)},
+                        "swing": {"type": "sphere", "scale": (0.03, 0.03, 0.03), "color": (1.0, 0.0, 0.0, 1.0)},
+                    }
+                )
+                self.stance_swing_vis = VisualizationMarkers(vis_cfg)
+            self.stance_swing_vis.set_visibility(True)
+        else:
+            if hasattr(self, "stance_swing_vis"):
+                self.stance_swing_vis.set_visibility(False)
 
-    # def _debug_vis_callback(self, event):
-    #     # safely return if view becomes invalid
-    #     # note: this invalidity happens because of isaac sim view callbacks
-    #     if self._view is None:
-    #         return
-    #     # get marker location
-    #     # -- base state
-    #     base_pos_w = self._data.pos_w.clone()
-    #     base_pos_w[:, 2] += 0.5
-    #     # -- resolve the scales
-    #     default_scale = self.acceleration_visualizer.cfg.markers["arrow"].scale
-    #     arrow_scale = torch.tensor(default_scale, device=self.device).repeat(self._data.lin_acc_b.shape[0], 1)
-    #     # get up axis of current stage
-    #     up_axis = stage_utils.get_stage_up_axis()
-    #     # arrow-direction
-    #     quat_opengl = math_utils.quat_from_matrix(
-    #         math_utils.create_rotation_matrix_from_view(
-    #             self._data.pos_w,
-    #             self._data.pos_w + math_utils.quat_apply(self._data.quat_w, self._data.lin_acc_b),
-    #             up_axis=up_axis,
-    #             device=self._device,
-    #         )
-    #     )
-    #     quat_w = math_utils.convert_camera_frame_orientation_convention(quat_opengl, "opengl", "world")
-    #     # display markers
-    #     self.acceleration_visualizer.visualize(base_pos_w, quat_w, arrow_scale)
+
+    def _debug_vis_callback(self, event):
+        if self._view is None or not hasattr(self, "stance_swing_vis"):
+            return
+        
+        # 获取足端世界坐标（例如从 scene 或 body view 中）
+        foot_pos_w = self._view.get_body_positions()[:, self.cfg.body_ids, :]  # [num_envs, 4, 3]
+        contact_states = self._data.desired_contact_states  # [num_envs, 4]
+
+        # 遍历每条腿
+        for leg_idx in range(4):
+            stance_mask = contact_states[:, leg_idx] > 0.5
+            swing_mask = ~stance_mask
+            # 取对应坐标
+            stance_pos = foot_pos_w[stance_mask, leg_idx, :]
+            swing_pos = foot_pos_w[swing_mask, leg_idx, :]
+            # 可视化
+            if stance_pos.numel() > 0:
+                self.stance_swing_vis.visualize(stance_pos, color="stance")
+            if swing_pos.numel() > 0:
+                self.stance_swing_vis.visualize(swing_pos, color="swing")
+
