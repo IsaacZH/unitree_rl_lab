@@ -213,31 +213,6 @@ def air_time_variance_penalty(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg
 Feet Gait rewards.
 """
 
-# def base_height_l2(
-#     env: ManagerBasedRLEnv,
-#     target_height: float,
-#     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-#     sensor_cfg: SceneEntityCfg | None = None,
-# ) -> torch.Tensor:
-#     """Penalize asset height from its target using L2 squared kernel.
-
-#     Note:
-#         For flat terrain, target height is in the world frame. For rough terrain,
-#         sensor readings can adjust the target height to account for the terrain.
-#     """
-#     # extract the used quantities (to enable type-hinting)
-#     asset: RigidObject = env.scene[asset_cfg.name]
-#     if sensor_cfg is not None:
-#         sensor: RayCaster = env.scene[sensor_cfg.name]
-#         # Adjust the target height using the sensor data
-#         adjusted_target_height = target_height + torch.mean(sensor.data.ray_hits_w[..., 2], dim=1)
-#     else:
-#         # Use the provided target height directly for flat terrain
-#         adjusted_target_height = target_height
-#     # Compute the L2 squared penalty
-#     return torch.square(asset.data.root_pos_w[:, 2] - adjusted_target_height)
-
-
 
 def tracking_contacts_shaped_force(
     env: ManagerBasedRLEnv,
@@ -271,7 +246,7 @@ def tracking_contacts_shaped_force(
 
     # 4. 每条腿平均
     reward = torch.mean(reward_per_leg, dim=1)  # [num_envs]
-    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
+    # reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
 
     return reward
 
@@ -311,7 +286,7 @@ def tracking_contacts_shaped_velocity(
 
     # 4. 对四条腿平均
     reward = torch.mean(reward_per_leg, dim=1)  # [num_envs]
-    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
+    # reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
 
     return reward
 
@@ -339,11 +314,11 @@ def feet_clearance_cmd_linear(
 
     phases = 1 - torch.abs(1.0 - torch.clip((gait_sensor.data.foot_indices * 2.0) - 1.0, 0.0, 1.0) * 2.0)
     foot_height = (asset.data.body_pos_w[:, asset_cfg.body_ids, 2]).view(env.num_envs, -1)
-    target_foot_height = target_height * phases + 0.02 + ground_height
+    target_foot_height = target_height * phases + ground_height# + 0.02
     rew_foot_clearance = torch.square(target_foot_height - foot_height) * (1 - gait_sensor.data.desired_contact_states)
     reward = torch.sum(rew_foot_clearance, dim=1)
     # 当没有速度指令时不抬腿
-    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
+    # reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
     return reward
 
 def raibert_heuristic(
@@ -403,7 +378,7 @@ def raibert_heuristic(
     err_raibert_heuristic = torch.abs(desired_footsteps_body_frame - footpos_in_body_frame[:, :, 0:2])
 
     reward = torch.sum(torch.square(err_raibert_heuristic), dim=(1, 2))
-    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
+    # reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
     return reward
 
 """
