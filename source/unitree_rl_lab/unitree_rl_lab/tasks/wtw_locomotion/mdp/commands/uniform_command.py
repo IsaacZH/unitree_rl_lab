@@ -40,7 +40,7 @@ class UniformCommand(CommandTerm):
         # -- robot
         self.robot: Articulation = env.scene[cfg.asset_name]
 
-        self.scalar_command = torch.zeros(self.num_envs, device=self.device)
+        self.scalar_command = torch.zeros(self.num_envs, 1, device=self.device)
         # # -- metrics
         # self.metrics["error_vel_xy"] = torch.zeros(self.num_envs, device=self.device)
         # self.metrics["error_vel_yaw"] = torch.zeros(self.num_envs, device=self.device)
@@ -72,8 +72,8 @@ class UniformCommand(CommandTerm):
 
     def _resample_command(self, env_ids: Sequence[int]):
         # sample velocity commands
-        r = torch.empty(len(env_ids), device=self.device)
-        self.scalar_command[env_ids] = r.uniform_(*self.cfg.ranges)
+        r = torch.empty(len(env_ids), 1, device=self.device)
+        self.scalar_command[env_ids, :] = r.uniform_(*self.cfg.ranges)
 
     def _update_command(self):
         """Update the command (no-op for uniform command as it doesn't change between resampling)."""

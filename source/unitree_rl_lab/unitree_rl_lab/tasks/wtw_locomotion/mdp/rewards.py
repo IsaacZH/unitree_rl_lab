@@ -261,27 +261,27 @@ def compute_gait_parameters(
     # === 1. Extract gait command parameters ===
     # Use default values if commands don't exist
     try:
-        frequencies = env.command_manager.get_command(frequency_command_name)
+        frequencies = env.command_manager.get_command(frequency_command_name).squeeze(-1)
     except:
         frequencies = torch.full((n,), 3.0, device=device)
     
     try:
-        phases = env.command_manager.get_command(phase_command_name)
+        phases = env.command_manager.get_command(phase_command_name).squeeze(-1)
     except:
         phases = torch.full((n,), 0.5, device=device)
     
     try:
-        offsets = env.command_manager.get_command(offset_command_name)
+        offsets = env.command_manager.get_command(offset_command_name).squeeze(-1)
     except:
         offsets = torch.full((n,), 0.0, device=device)
     
     try:
-        bounds = env.command_manager.get_command(bound_command_name)
+        bounds = env.command_manager.get_command(bound_command_name).squeeze(-1)
     except:
         bounds = torch.full((n,), 0.0, device=device)
     
     try:
-        durations = env.command_manager.get_command(duration_command_name)
+        durations = env.command_manager.get_command(duration_command_name).squeeze(-1)
     except:
         durations = torch.full((n,), 0.5, device=device)
     
@@ -417,8 +417,8 @@ def tracking_contacts_shaped_velocity(
 def feet_clearance_cmd_linear(
     env: ManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg,
-    target_height: float,
     ray_sensor_cfg: SceneEntityCfg | None = None,
+    foot_height_command_name: str = "foot_height",
     velocity_command_name: str = "base_velocity",
 ) -> torch.Tensor:
     
@@ -435,6 +435,9 @@ def feet_clearance_cmd_linear(
     threshold = 0.7
     phases = torch.clamp(env._desired_contact_states - threshold, min=0) / (1 - threshold) # type: ignore
     foot_height = (asset.data.body_pos_w[:, asset_cfg.body_ids, 2]).view(env.num_envs, -1)
+    
+    target_height = env.command_manager.get_command(foot_height_command_name).squeeze(-1)  # [num_envs]
+    target_height = target_height.unsqueeze(-1)  # [num_envs, 1] for broadcasting with phases [num_envs, 4]
     target_foot_height = target_height * phases + ground_height + 0.023
     # print(f"foot_height for env 0: {foot_height[0]}")
     # print(f"target_foot_height for env 0: {target_foot_height[0]}")
@@ -449,6 +452,8 @@ def raibert_heuristic(
     asset_cfg: SceneEntityCfg,
     velocity_command_name: str = "base_velocity",
     frequency_command_name: str = "gait_frequency",
+    stance_width_command_name: str = "stand_width",
+    stance_length_command_name: str = "stand_length"
 ) -> torch.Tensor:
     
     asset: RigidObject = env.scene[asset_cfg.name]
@@ -463,29 +468,40 @@ def raibert_heuristic(
         )
         
     # nominal positions: [FL, FR, RL, RR]
-    desired_stance_width = 0.35
-    desired_ys_nom = torch.tensor([desired_stance_width / 2, -desired_stance_width / 2,
-                                   desired_stance_width / 2, -desired_stance_width / 2], 
-                                  device=env.device).unsqueeze(0)
+    # desired_stance_width = 0.35
+    desired_stance_width = env.command_manager.get_command(stance_width_command_name).squeeze(-1)
+    # Create nominal y positions for each environment: [num_envs, 4]
+    desired_ys_nom = torch.stack([
+        desired_stance_width / 2,
+        -desired_stance_width / 2,
+        desired_stance_width / 2,
+        -desired_stance_width / 2
+    ], dim=-1)  # [num_envs, 4]
 
-    desired_stance_length = 0.45
-    desired_xs_nom = torch.tensor([desired_stance_length / 2,  desired_stance_length / 2, 
-                                   -desired_stance_length / 2, -desired_stance_length / 2], 
-                                  device=env.device).unsqueeze(0)
+    # desired_stance_length = 0.45
+    desired_stance_length = env.command_manager.get_command(stance_length_command_name).squeeze(-1)
+    # Create nominal x positions for each environment: [num_envs, 4]
+    desired_xs_nom = torch.stack([
+        desired_stance_length / 2,
+        desired_stance_length / 2,
+        -desired_stance_length / 2,
+        -desired_stance_length / 2
+    ], dim=-1)  # [num_envs, 4]
 
     # raibert offsets
-    cmd_frequencies = 3
+    cmd_frequencies = env.command_manager.get_command(frequency_command_name).squeeze(-1)  # [batch_size]
     
     # Calculate phases for all legs
     phases = (torch.abs(1.0 - (env._foot_indices * 2.0)) * 1.0 - 0.5).unsqueeze(-1)  # [batch_size, 4, 1]
     
     x_vel_des = env.command_manager.get_command(velocity_command_name)[:, 0:1]  # [batch_size, 1]
     yaw_vel_des = env.command_manager.get_command(velocity_command_name)[:, 2:3]  # [batch_size, 1]
-    y_vel_des = yaw_vel_des * desired_stance_length / 2
+    y_vel_des = yaw_vel_des * desired_stance_length.unsqueeze(-1) / 2  # [batch_size, 1]
     
-    # Reshape velocities for broadcasting
+    # Reshape velocities and frequencies for broadcasting
     x_vel_des = x_vel_des.unsqueeze(1)  # [batch_size, 1, 1]
     y_vel_des = y_vel_des.unsqueeze(1)  # [batch_size, 1, 1]
+    cmd_frequencies = cmd_frequencies.unsqueeze(-1).unsqueeze(-1)  # [batch_size, 1, 1]
     
     # Calculate offsets (phases is already [batch_size, 4, 1])
     desired_ys_offset = (phases * y_vel_des * (0.5 / cmd_frequencies)).squeeze(-1)  # [batch_size, 4]
