@@ -312,10 +312,13 @@ def feet_clearance_cmd_linear(
         # Use the provided target height directly for flat terrain
         ground_height = 0
 
-    phases = 1 - torch.abs(1.0 - torch.clip((gait_sensor.data.foot_indices * 2.0) - 1.0, 0.0, 1.0) * 2.0)
+    threshold = 0.7
+    phases = torch.clamp(gait_sensor.data.desired_contact_states - threshold, min=0) / (1 - threshold)
     foot_height = (asset.data.body_pos_w[:, asset_cfg.body_ids, 2]).view(env.num_envs, -1)
-    target_foot_height = target_height * phases + ground_height# + 0.02
-    rew_foot_clearance = torch.square(target_foot_height - foot_height) * (1 - gait_sensor.data.desired_contact_states)
+    target_foot_height = target_height * phases + ground_height + 0.023
+    # print(f"foot_height for env 0: {foot_height[0]}")
+    # print(f"target_foot_height for env 0: {target_foot_height[0]}")
+    rew_foot_clearance = torch.square(target_foot_height - foot_height)
     reward = torch.sum(rew_foot_clearance, dim=1)
     # 当没有速度指令时不抬腿
     # reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
@@ -376,6 +379,9 @@ def raibert_heuristic(
     desired_footsteps_body_frame = torch.cat((desired_xs_nom.unsqueeze(2), desired_ys_nom.unsqueeze(2)), dim=2)
 
     err_raibert_heuristic = torch.abs(desired_footsteps_body_frame - footpos_in_body_frame[:, :, 0:2])
+
+    # print(f"desired_footsteps_body_frame: {desired_footsteps_body_frame[0, :, :]}")
+    # print(f"footpos_in_body_frame: {footpos_in_body_frame[0, :, :]}")
 
     reward = torch.sum(torch.square(err_raibert_heuristic), dim=(1, 2))
     # reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
