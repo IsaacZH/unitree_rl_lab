@@ -20,7 +20,7 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from unitree_rl_lab.assets.robots.unitree import UNITREE_GO2_CFG as ROBOT_CFG
 from unitree_rl_lab.tasks.wtw_locomotion import mdp
-from unitree_rl_lab.tasks.wtw_locomotion.sensors import GaitSensorCfg
+# from unitree_rl_lab.tasks.wtw_locomotion.sensors import GaitSensorCfg
 COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
     size=(8.0, 8.0),
     border_width=20.0,
@@ -102,7 +102,7 @@ class RobotSceneCfg(InteractiveSceneCfg):
         mesh_prim_paths=["/World/ground"],
     )
     contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True, debug_vis=True)
-    gait = GaitSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/base", debug_vis=False)
+    # gait = GaitSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/base", debug_vis=False)
     # lights
     sky_light = AssetBaseCfg(
         prim_path="/World/skyLight",
@@ -306,7 +306,11 @@ class ObservationsCfg:
 @configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
-
+    compute_gait_parameters = RewTerm(
+        func=mdp.compute_gait_parameters,
+        weight=1,
+    )
+    
     # -- task
     track_lin_vel_xy = RewTerm(
         func=mdp.track_lin_vel_xy_exp, weight=1.0, params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
@@ -388,7 +392,6 @@ class RewardsCfg:
         weight=-5.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
-            "sensor_cfg": SceneEntityCfg("gait"),
         },
     )
 
@@ -397,7 +400,6 @@ class RewardsCfg:
         weight=-10.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
-            "gait_sensor_cfg": SceneEntityCfg("gait"),
             # "ray_sensor_cfg": SceneEntityCfg("height_scanner"),
             "target_height": 0.15,
         },
@@ -408,7 +410,6 @@ class RewardsCfg:
         weight=1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
-            "gait_sensor_cfg": SceneEntityCfg("gait"),
         },
     )
         
@@ -416,7 +417,6 @@ class RewardsCfg:
         func=mdp.tracking_contacts_shaped_force,
         weight=1.0,
         params={
-            "gait_sensor_cfg": SceneEntityCfg("gait"),
             "contact_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
         },
     )

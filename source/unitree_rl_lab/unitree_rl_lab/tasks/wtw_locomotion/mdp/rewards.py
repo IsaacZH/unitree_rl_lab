@@ -214,9 +214,134 @@ Feet Gait rewards.
 """
 
 
+def compute_gait_parameters(
+    env: ManagerBasedRLEnv,
+    frequency_command_name: str = "gait_frequency",
+    phase_command_name: str = "gait_phase",
+    offset_command_name: str = "gait_offset",
+    bound_command_name: str = "gait_bound",
+    duration_command_name: str = "gait_duration",
+) -> torch.Tensor:
+    """
+    Compute all gait parameters including gait indices, foot indices, clock inputs, and desired contact states.
+    
+    This function creates and manages gait state directly in the environment, without relying on GaitSensor.
+    The gait state is stored in env attributes and persists across calls.
+    
+    Args:
+        env: The environment
+        frequency_command_name: Name of frequency command (default: "gait_frequency")
+        phase_command_name: Name of phase command (default: "gait_phase")
+        offset_command_name: Name of offset command (default: "gait_offset")
+        bound_command_name: Name of bound command (default: "gait_bound")
+        duration_command_name: Name of duration command (default: "gait_duration")
+    
+    Returns:
+        Dictionary containing:
+            - gait_indices: [num_envs] - Main gait phase [0, 1)
+            - foot_indices: [num_envs, 4] - Per-foot phase indices
+            - clock_inputs: [num_envs, 4] - sin(2π * foot_indices)
+            - doubletime_clock_inputs: [num_envs, 4] - sin(4π * foot_indices)
+            - halftime_clock_inputs: [num_envs, 4] - sin(π * foot_indices)
+            - desired_contact_states: [num_envs, 4] - Smoothed contact states [0, 1]
+    """
+    
+    n = env.num_envs
+    device = env.device
+    dt = env.step_dt
+    
+    # === Initialize gait_indices if not exists ===
+    if not hasattr(env, "_gait_indices"):
+        env._gait_indices = torch.zeros(n, device=device)  # type: ignore
+    if not hasattr(env, "_foot_indices"):
+        env._foot_indices = torch.zeros(n, 4, device=device)  # type: ignore
+    if not hasattr(env, "_desired_contact_states"):
+        env._desired_contact_states = torch.zeros(n, 4, device=device)  # type: ignore
+
+    # === 1. Extract gait command parameters ===
+    # Use default values if commands don't exist
+    try:
+        frequencies = env.command_manager.get_command(frequency_command_name)
+    except:
+        frequencies = torch.full((n,), 3.0, device=device)
+    
+    try:
+        phases = env.command_manager.get_command(phase_command_name)
+    except:
+        phases = torch.full((n,), 0.5, device=device)
+    
+    try:
+        offsets = env.command_manager.get_command(offset_command_name)
+    except:
+        offsets = torch.full((n,), 0.0, device=device)
+    
+    try:
+        bounds = env.command_manager.get_command(bound_command_name)
+    except:
+        bounds = torch.full((n,), 0.0, device=device)
+    
+    try:
+        durations = env.command_manager.get_command(duration_command_name)
+    except:
+        durations = torch.full((n,), 0.5, device=device)
+    
+    # === 2. Update gait indices ===
+    env._gait_indices = torch.remainder(  # type: ignore
+        env._gait_indices + dt * frequencies,  # type: ignore
+        1.0
+    )
+    gait_indices = env._gait_indices  # type: ignore
+    
+    # === 3. Calculate foot indices (4 legs) [FL, FR, RL, RR] ===
+    fi_list = [
+        gait_indices + offsets,                                    # FL
+        gait_indices + phases + offsets + bounds,                  # FR
+        gait_indices + phases,                                     # RL
+        gait_indices + bounds                                      # RR
+    ]
+    foot_indices = torch.remainder(torch.stack(fi_list, dim=1), 1.0)
+    env._foot_indices = foot_indices  # type: ignore
+    
+    # === 4. Remap stance/swing phases using durations ===
+    foot_indices_warped = foot_indices.clone()
+    for j in range(4):
+        phase_j = foot_indices[:, j]
+        stance_mask = phase_j < durations
+        swing_mask = phase_j > durations
+        
+        # stance: [0, durations) -> [0, 0.5)
+        foot_indices_warped[stance_mask, j] = phase_j[stance_mask] * (0.5 / durations[stance_mask])
+        # swing: (durations, 1) -> [0.5, 1)
+        foot_indices_warped[swing_mask, j] = 0.5 + (phase_j[swing_mask] - durations[swing_mask]) * (
+            0.5 / (1 - durations[swing_mask])
+        )
+    
+    # === 5. Generate clock signals (sin inputs) ===
+    clock_inputs = torch.sin(2 * torch.pi * foot_indices_warped)
+    doubletime_clock_inputs = torch.sin(4 * torch.pi * foot_indices_warped)
+    halftime_clock_inputs = torch.sin(torch.pi * foot_indices_warped)
+    
+    # === 6. Smooth desired contact states ===
+    kappa = 0.07
+    smoothing_cdf_start = torch.distributions.normal.Normal(0, kappa).cdf
+    
+    def smoothing_multiplier(col_tensor: torch.Tensor) -> torch.Tensor:
+        base = torch.remainder(col_tensor, 1.0)
+        term1 = smoothing_cdf_start(base) * (1 - smoothing_cdf_start(base - 0.5))
+        term2 = smoothing_cdf_start(base - 1.0) * (1 - smoothing_cdf_start(base - 0.5 - 1.0))
+        return term1 + term2
+    
+    smoothing_FL = smoothing_multiplier(foot_indices_warped[:, 0])
+    smoothing_FR = smoothing_multiplier(foot_indices_warped[:, 1])
+    smoothing_RL = smoothing_multiplier(foot_indices_warped[:, 2])
+    smoothing_RR = smoothing_multiplier(foot_indices_warped[:, 3])
+    env._desired_contact_states = torch.stack([smoothing_FL, smoothing_FR, smoothing_RL, smoothing_RR], dim=1) # type: ignore
+
+    return torch.tensor(0.0, device=env.device)
+
+
 def tracking_contacts_shaped_force(
     env: ManagerBasedRLEnv,
-    gait_sensor_cfg: SceneEntityCfg,
     contact_sensor_cfg: SceneEntityCfg,
     command_name: str = "base_velocity",
 ) -> torch.Tensor:
@@ -228,7 +353,6 @@ def tracking_contacts_shaped_force(
         gait_sensor_cfg: gait sensor config
         contact_sensor_cfg: contact sensor config
     """
-    gait_sensor: GaitSensor = env.scene.sensors[gait_sensor_cfg.name]
     contact_sensor: ContactSensor = env.scene.sensors[contact_sensor_cfg.name]
 
     # 1. 获得每条腿的总力（norm）
@@ -237,7 +361,7 @@ def tracking_contacts_shaped_force(
     )  # [num_envs, num_feet]
 
     # 2. 获得期望接触状态
-    desired_contact = gait_sensor.data.desired_contact_states  # [num_envs, 4]
+    desired_contact = env._desired_contact_states  # type: ignore 
 
     # 3. 惩罚 swing leg 的接触力，reward 越大越好（非支撑腿力越小）
     gait_force_sigma = 100.0
@@ -252,7 +376,6 @@ def tracking_contacts_shaped_force(
 
 def tracking_contacts_shaped_velocity(
     env: ManagerBasedRLEnv,
-    gait_sensor_cfg: SceneEntityCfg,
     asset_cfg: SceneEntityCfg,
     command_name: str = "base_velocity",
 ) -> torch.Tensor:
@@ -268,7 +391,6 @@ def tracking_contacts_shaped_velocity(
         reward: Tensor of shape [num_envs]
     """
 
-    gait_sensor: GaitSensor = env.scene.sensors[gait_sensor_cfg.name]
     asset: RigidObject = env.scene[asset_cfg.name]
 
     # 1. 脚速度 L2 norm
@@ -277,7 +399,7 @@ def tracking_contacts_shaped_velocity(
     )  # [num_envs, num_feet]
 
     # 2. 支撑腿 mask
-    desired_contact = gait_sensor.data.desired_contact_states  # [num_envs, 4]
+    desired_contact = env._desired_contact_states  # [num_envs, 4]
     stance_mask = desired_contact  # 1: stance leg, 0: swing leg
 
     # 3. 奖励/惩罚公式（速度越大惩罚越大）
@@ -295,14 +417,12 @@ def tracking_contacts_shaped_velocity(
 def feet_clearance_cmd_linear(
     env: ManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg,
-    gait_sensor_cfg: SceneEntityCfg,
     target_height: float,
     ray_sensor_cfg: SceneEntityCfg | None = None,
     velocity_command_name: str = "base_velocity",
 ) -> torch.Tensor:
     
     asset: RigidObject = env.scene[asset_cfg.name]
-    gait_sensor: GaitSensor = env.scene.sensors[gait_sensor_cfg.name]
     
     if ray_sensor_cfg is not None:
         sensor: RayCaster = env.scene[ray_sensor_cfg.name]
@@ -313,7 +433,7 @@ def feet_clearance_cmd_linear(
         ground_height = 0
 
     threshold = 0.7
-    phases = torch.clamp(gait_sensor.data.desired_contact_states - threshold, min=0) / (1 - threshold)
+    phases = torch.clamp(env._desired_contact_states - threshold, min=0) / (1 - threshold) # type: ignore
     foot_height = (asset.data.body_pos_w[:, asset_cfg.body_ids, 2]).view(env.num_envs, -1)
     target_foot_height = target_height * phases + ground_height + 0.023
     # print(f"foot_height for env 0: {foot_height[0]}")
@@ -327,13 +447,11 @@ def feet_clearance_cmd_linear(
 def raibert_heuristic(
     env: ManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg,
-    sensor_cfg: SceneEntityCfg,
     velocity_command_name: str = "base_velocity",
     frequency_command_name: str = "gait_frequency",
 ) -> torch.Tensor:
     
     asset: RigidObject = env.scene[asset_cfg.name]
-    gait_sensor: GaitSensor = env.scene.sensors[sensor_cfg.name]
 
     cur_footpos_translated = asset.data.body_pos_w[:, asset_cfg.body_ids, :] - asset.data.root_pos_w[:, :].unsqueeze(1)
     footpos_in_body_frame = torch.zeros(env.num_envs, len(asset_cfg.body_ids), 3, device=env.device)
@@ -359,7 +477,7 @@ def raibert_heuristic(
     cmd_frequencies = 3
     
     # Calculate phases for all legs
-    phases = (torch.abs(1.0 - (gait_sensor.data.foot_indices * 2.0)) * 1.0 - 0.5).unsqueeze(-1)  # [batch_size, 4, 1]
+    phases = (torch.abs(1.0 - (env._foot_indices * 2.0)) * 1.0 - 0.5).unsqueeze(-1)  # [batch_size, 4, 1]
     
     x_vel_des = env.command_manager.get_command(velocity_command_name)[:, 0:1]  # [batch_size, 1]
     yaw_vel_des = env.command_manager.get_command(velocity_command_name)[:, 2:3]  # [batch_size, 1]
@@ -383,8 +501,6 @@ def raibert_heuristic(
 
     # print(f"desired_footsteps_body_frame: {desired_footsteps_body_frame[0, :, :]}")
     # print(f"footpos_in_body_frame: {footpos_in_body_frame[0, :, :]}")
-    # PRINT frequency_command_name
-    print(f"Frequency command: {env.command_manager.get_command(frequency_command_name)[0]}")
 
     reward = torch.sum(torch.square(err_raibert_heuristic), dim=(1, 2))
     return reward
