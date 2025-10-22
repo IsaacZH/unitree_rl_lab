@@ -308,7 +308,7 @@ def compute_gait_parameters(
         phase_j = foot_indices[:, j]
         stance_mask = phase_j < durations
         swing_mask = phase_j > durations
-        
+        # inverse
         # stance: [0, durations) -> [0, 0.5)
         foot_indices_warped[stance_mask, j] = phase_j[stance_mask] * (0.5 / durations[stance_mask])
         # swing: (durations, 1) -> [0.5, 1)
@@ -331,10 +331,10 @@ def compute_gait_parameters(
         term2 = smoothing_cdf_start(base - 1.0) * (1 - smoothing_cdf_start(base - 0.5 - 1.0))
         return term1 + term2
     
-    smoothing_FL = smoothing_multiplier(foot_indices_warped[:, 0])
-    smoothing_FR = smoothing_multiplier(foot_indices_warped[:, 1])
-    smoothing_RL = smoothing_multiplier(foot_indices_warped[:, 2])
-    smoothing_RR = smoothing_multiplier(foot_indices_warped[:, 3])
+    smoothing_FL = smoothing_multiplier(foot_indices_warped[:, 1])
+    smoothing_FR = smoothing_multiplier(foot_indices_warped[:, 0])
+    smoothing_RL = smoothing_multiplier(foot_indices_warped[:, 3])
+    smoothing_RR = smoothing_multiplier(foot_indices_warped[:, 2])
     env._desired_contact_states = torch.stack([smoothing_FL, smoothing_FR, smoothing_RL, smoothing_RR], dim=1) # type: ignore
 
     return torch.tensor(0.0, device=env.device)
@@ -370,7 +370,7 @@ def tracking_contacts_shaped_force(
 
     # 4. 每条腿平均
     reward = torch.mean(reward_per_leg, dim=1)  # [num_envs]
-    # reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
+    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
 
     return reward
 
@@ -408,7 +408,7 @@ def tracking_contacts_shaped_velocity(
 
     # 4. 对四条腿平均
     reward = torch.mean(reward_per_leg, dim=1)  # [num_envs]
-    # reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
+    reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
 
     return reward
 

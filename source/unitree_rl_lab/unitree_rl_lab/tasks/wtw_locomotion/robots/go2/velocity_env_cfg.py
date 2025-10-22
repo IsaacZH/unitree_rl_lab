@@ -208,13 +208,38 @@ class CommandsCfg:
         # ),
     )
     
-    gait_frequency = mdp.UniformCommandCfg(
-        asset_name="robot",
-        resampling_time_range=(10.0, 10.0),
-        debug_vis=False,
-        ranges=(2.5, 3.5),
-    )
-
+    # gait_frequency = mdp.UniformCommandCfg(
+    #     asset_name="robot",
+    #     resampling_time_range=(10.0, 10.0),
+    #     debug_vis=False,
+    #     ranges=(2.0, 4.0),
+    # )
+    
+    
+    # gait_duration = mdp.UniformCommandCfg(
+    #     asset_name="robot",
+    #     resampling_time_range=(10.0, 10.0),
+    #     debug_vis=False,
+    #     ranges=(0, 0),
+    # )
+    # base_height = mdp.UniformCommandCfg(
+    #     asset_name="robot",
+    #     resampling_time_range=(10.0, 10.0),
+    #     debug_vis=False,
+    #     ranges=(3.0, 4.0),
+    # )
+    # stand_width = mdp.UniformCommandCfg(
+    #     asset_name="robot",
+    #     resampling_time_range=(10.0, 10.0),
+    #     debug_vis=False,
+    #     ranges=(0.0, 0.0),
+    # )
+    # stand_length = mdp.UniformCommandCfg(
+    #     asset_name="robot",
+    #     resampling_time_range=(10.0, 10.0),
+    #     debug_vis=False,   
+    #     ranges=(0.35, 0.45),
+    # )
 
 @configclass
 class ActionsCfg:
@@ -236,9 +261,24 @@ class ObservationsCfg:
         # observation terms (order preserved)
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.2, clip=(-100, 100), noise=Unoise(n_min=-0.2, n_max=0.2))
         projected_gravity = ObsTerm(func=mdp.projected_gravity, clip=(-100, 100), noise=Unoise(n_min=-0.05, n_max=0.05))
+        
+        # command
         velocity_commands = ObsTerm(
             func=mdp.generated_commands, clip=(-100, 100), params={"command_name": "base_velocity"}
         )
+        # gait_frequency_cmd = ObsTerm(
+        #     func=mdp.generated_commands, clip=(-100, 100), params={"command_name": "gait_frequency"}
+        # )
+        # base_height_cmd = ObsTerm(
+        #     func=mdp.generated_commands, clip=(-100, 100), params={"command_name": "base_height"}
+        # )
+        # stand_length_cmd = ObsTerm(
+        #     func=mdp.generated_commands, clip=(-100, 100), params={"command_name": "stand_length"}
+        # )
+        # stand_width_cmd = ObsTerm(
+        #     func=mdp.generated_commands, clip=(-100, 100), params={"command_name": "stand_width"}
+        # )
+        
         joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, clip=(-100, 100), noise=Unoise(n_min=-0.01, n_max=0.01))
         joint_vel_rel = ObsTerm(
             func=mdp.joint_vel_rel, scale=0.05, clip=(-100, 100), noise=Unoise(n_min=-1.5, n_max=1.5)
@@ -405,21 +445,21 @@ class RewardsCfg:
         },
     )
     
-    tracking_contacts_shaped_velocity = RewTerm(
-        func=mdp.tracking_contacts_shaped_velocity,
-        weight=1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
-        },
-    )
+    # tracking_contacts_shaped_velocity = RewTerm(
+    #     func=mdp.tracking_contacts_shaped_velocity,
+    #     weight=1.0,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+    #     },
+    # )
         
-    tracking_contacts_shaped_force = RewTerm(
-        func=mdp.tracking_contacts_shaped_force,
-        weight=1.0,
-        params={
-            "contact_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-        },
-    )
+    # tracking_contacts_shaped_force = RewTerm(
+    #     func=mdp.tracking_contacts_shaped_force,
+    #     weight=1.0,
+    #     params={
+    #         "contact_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+    #     },
+    # )
     
     # joint_mirror = RewTerm(
     #     func=mdp.joint_mirror,
