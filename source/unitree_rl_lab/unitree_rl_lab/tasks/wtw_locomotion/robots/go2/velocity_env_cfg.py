@@ -207,6 +207,13 @@ class CommandsCfg:
         #     lin_vel_x=(-0, 0), lin_vel_y=(-0, 0), ang_vel_z=(-0.0, 0.0)
         # ),
     )
+    
+    gait_frequency = mdp.UniformCommandCfg(
+        asset_name="robot",
+        resampling_time_range=(10.0, 10.0),
+        debug_vis=False,
+        ranges=(2.5, 3.5),
+    )
 
 
 @configclass
@@ -382,7 +389,6 @@ class RewardsCfg:
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "sensor_cfg": SceneEntityCfg("gait"),
-            "command_name": "base_velocity",
         },
     )
 
@@ -397,23 +403,24 @@ class RewardsCfg:
         },
     )
     
-    # tracking_contacts_shaped_velocity = RewTerm(
-    #     func=mdp.tracking_contacts_shaped_velocity,
-    #     weight=4.0,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
-    #         "gait_sensor_cfg": SceneEntityCfg("gait"),
-    #     },
-    # )
+    tracking_contacts_shaped_velocity = RewTerm(
+        func=mdp.tracking_contacts_shaped_velocity,
+        weight=1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+            "gait_sensor_cfg": SceneEntityCfg("gait"),
+        },
+    )
         
-    # tracking_contacts_shaped_force = RewTerm(
-    #     func=mdp.tracking_contacts_shaped_force,
-    #     weight=4.0,
-    #     params={
-    #         "gait_sensor_cfg": SceneEntityCfg("gait"),
-    #         "contact_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-    #     },
-    # )
+    tracking_contacts_shaped_force = RewTerm(
+        func=mdp.tracking_contacts_shaped_force,
+        weight=1.0,
+        params={
+            "gait_sensor_cfg": SceneEntityCfg("gait"),
+            "contact_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+        },
+    )
+    
     # joint_mirror = RewTerm(
     #     func=mdp.joint_mirror,
     #     weight=-0.05,
@@ -503,7 +510,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
 class RobotPlayEnvCfg(RobotEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.scene.num_envs = 1
+        self.scene.num_envs = 64
         # self.scene.terrain.terrain_generator.num_rows = 2
         # self.scene.terrain.terrain_generator.num_cols = 1
         self.commands.base_velocity.ranges = self.commands.base_velocity.limit_ranges

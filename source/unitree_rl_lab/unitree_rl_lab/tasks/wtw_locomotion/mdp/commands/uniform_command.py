@@ -74,3 +74,7 @@ class UniformCommand(CommandTerm):
         # sample velocity commands
         r = torch.empty(len(env_ids), device=self.device)
         self.scalar_command[env_ids] = r.uniform_(*self.cfg.ranges)
+
+    def _update_command(self):
+        """Update the command (no-op for uniform command as it doesn't change between resampling)."""
+        pass

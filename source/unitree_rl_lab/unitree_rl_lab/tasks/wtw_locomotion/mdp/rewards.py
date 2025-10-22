@@ -298,7 +298,7 @@ def feet_clearance_cmd_linear(
     gait_sensor_cfg: SceneEntityCfg,
     target_height: float,
     ray_sensor_cfg: SceneEntityCfg | None = None,
-    command_name: str = "base_velocity",
+    velocity_command_name: str = "base_velocity",
 ) -> torch.Tensor:
     
     asset: RigidObject = env.scene[asset_cfg.name]
@@ -321,14 +321,15 @@ def feet_clearance_cmd_linear(
     rew_foot_clearance = torch.square(target_foot_height - foot_height)
     reward = torch.sum(rew_foot_clearance, dim=1)
     # 当没有速度指令时不抬腿
-    # reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
+    reward *= torch.linalg.norm(env.command_manager.get_command(velocity_command_name), dim=1) > 0.1
     return reward
 
 def raibert_heuristic(
     env: ManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg,
     sensor_cfg: SceneEntityCfg,
-    command_name: str = "base_velocity",
+    velocity_command_name: str = "base_velocity",
+    frequency_command_name: str = "gait_frequency",
 ) -> torch.Tensor:
     
     asset: RigidObject = env.scene[asset_cfg.name]
@@ -360,8 +361,8 @@ def raibert_heuristic(
     # Calculate phases for all legs
     phases = (torch.abs(1.0 - (gait_sensor.data.foot_indices * 2.0)) * 1.0 - 0.5).unsqueeze(-1)  # [batch_size, 4, 1]
     
-    x_vel_des = env.command_manager.get_command(command_name)[:, 0:1]  # [batch_size, 1]
-    yaw_vel_des = env.command_manager.get_command(command_name)[:, 2:3]  # [batch_size, 1]
+    x_vel_des = env.command_manager.get_command(velocity_command_name)[:, 0:1]  # [batch_size, 1]
+    yaw_vel_des = env.command_manager.get_command(velocity_command_name)[:, 2:3]  # [batch_size, 1]
     y_vel_des = yaw_vel_des * desired_stance_length / 2
     
     # Reshape velocities for broadcasting
@@ -382,9 +383,10 @@ def raibert_heuristic(
 
     # print(f"desired_footsteps_body_frame: {desired_footsteps_body_frame[0, :, :]}")
     # print(f"footpos_in_body_frame: {footpos_in_body_frame[0, :, :]}")
+    # PRINT frequency_command_name
+    print(f"Frequency command: {env.command_manager.get_command(frequency_command_name)[0]}")
 
     reward = torch.sum(torch.square(err_raibert_heuristic), dim=(1, 2))
-    # reward *= torch.linalg.norm(env.command_manager.get_command(command_name), dim=1) > 0.1
     return reward
 
 """
